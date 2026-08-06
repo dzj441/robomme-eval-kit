@@ -55,6 +55,15 @@ _n = len(_shards)
 _config_path = OUT / "run_config.txt"
 _config = _config_path.read_text() if _config_path.exists() else ""
 _global_round_robin = "sharding=global_round_robin_v1" in _config
+_ownership_path = OUT / "ownership.json"
+_ownership_payload = (
+    json.loads(_ownership_path.read_text()) if _ownership_path.exists() else {}
+)
+_ownership = _ownership_payload.get("owners")
+_dynamic_queue = _ownership_payload.get("sharding") in (
+    "dynamic_queue_v1",
+    "balanced_steal_v1",
+)
 _episodes_per_task = 50
 for _field in _config.split():
     if _field.startswith("episodes="):
@@ -64,7 +73,11 @@ for prog in _shards:
     shard = shard_index(prog)
     for task, eps in json.loads(prog.read_text()).items():
         for ep, v in eps.items():
-            if _n == 1:
+            if _dynamic_queue:
+                owned = True
+            elif _ownership is not None:
+                owned = int(_ownership[task][ep]) == shard
+            elif _n == 1:
                 owned = True
             elif _global_round_robin:
                 global_index = TASK_INDEX[task] * _episodes_per_task + int(ep)
@@ -73,6 +86,14 @@ for prog in _shards:
                 # Backward compatibility for runs created before global round-robin.
                 owned = int(ep) % _n == shard
             if v != "skip" and owned:
+                if (
+                    _dynamic_queue
+                    and ep in episodes.get(task, {})
+                    and episodes[task][ep] != v
+                ):
+                    raise RuntimeError(
+                        f"conflicting duplicate result for {task} episode {ep}"
+                    )
                 episodes.setdefault(task, {})[ep] = v
 
 ours: dict[str, float] = {}

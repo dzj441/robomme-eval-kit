@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One stateless batched policy server per GPU, with two evaluation shards sharing it.
+# One stateless batched policy server per GPU, shared by configurable evaluators.
 set -euo pipefail
 
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
@@ -24,6 +24,17 @@ MAX_BATCH_SIZE=${MAX_BATCH_SIZE:-2}
 MAX_WAIT_MS=${MAX_WAIT_MS:-100}
 MAX_QUEUE_SIZE=${MAX_QUEUE_SIZE:-256}
 MEM_FRACTION=${MEM_FRACTION:-0.95}
+SHARDING=${SHARDING:-global_round_robin_v1}
+WEIGHT_PROFILE=${WEIGHT_PROFILE:-}
+VIDEO_MODE=${VIDEO_MODE:-save}
+EVAL_NUM_THREADS=${EVAL_NUM_THREADS:-1}
+ENCODE_MAX_BATCH_SIZE=${ENCODE_MAX_BATCH_SIZE:-1}
+ENCODE_MAX_WAIT_MS=${ENCODE_MAX_WAIT_MS:-0}
+ENCODE_MAX_TOTAL_FRAMES=${ENCODE_MAX_TOTAL_FRAMES:-128}
+CPU_AFFINITY=${CPU_AFFINITY:-none}
+LAZY_HISTORY_ENCODE=${LAZY_HISTORY_ENCODE:-false}
+HISTORY_TRANSPORT_DTYPE=${HISTORY_TRANSPORT_DTYPE:-float32}
+JAX_CACHE_DIR=${JAX_CACHE_DIR:-$ROOT/eval_out/.jax_compilation_cache_550}
 
 SERVER_PY=${SERVER_PY:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/miniconda3/envs/robomme-vla/bin/python}
 EVAL_PY=${EVAL_PY:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/miniconda3/envs/robomme/bin/python}
@@ -56,7 +67,7 @@ if (( visible_gpus < NUM_GPUS )); then
   exit 1
 fi
 
-mkdir -p "$OUT/logs" "$XDG_RUNTIME_DIR"
+mkdir -p "$OUT/logs" "$XDG_RUNTIME_DIR" "$JAX_CACHE_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
 
 ALL_TASKS="BinFill,StopCube,PickXtimes,SwingXtimes,VideoUnmask,ButtonUnmask,VideoUnmaskSwap,ButtonUnmaskSwap,PickHighlight,VideoRepick,VideoPlaceButton,VideoPlaceOrder,MoveCube,InsertPeg,PatternLock,RouteStick"
@@ -68,6 +79,29 @@ START_TIME=$(date -Is)
 
 SERVER_PIDS=()
 EVAL_PIDS=()
+
+completed_count() {
+  if [[ -f "$OUT/ownership.json" ]]; then
+    "$EVAL_PY" "$KIT_ROOT/orchestration/count_owned_progress.py" "$OUT"
+  else
+    find "$OUT" -type f -name '*.mp4' | wc -l
+  fi
+}
+
+gpu_cpu_list() {
+  local gpu=$1 first
+  if (( gpu < 4 )); then
+    first=$((gpu * 8))
+  else
+    first=$((32 + (gpu - 4) * 8))
+  fi
+  echo "$first-$((first + 7)),$((first + 64))-$((first + 71))"
+}
+
+gpu_numa_node() {
+  local gpu=$1
+  if (( gpu < 4 )); then echo 0; else echo 1; fi
+}
 
 cleanup() {
   trap - EXIT INT TERM
@@ -93,7 +127,7 @@ record_timing() {
   end_epoch=$(date +%s)
   end_time=$(date -Is)
   wall_seconds=$((end_epoch - START_EPOCH))
-  total_completed=$(find "$OUT" -type f -name '*.mp4' | wc -l)
+  total_completed=$(completed_count)
   new_completed=$((total_completed - INITIAL_COMPLETED))
   if (( new_completed > 0 && wall_seconds > 0 )); then
     episodes_per_hour=$(awk -v n="$new_completed" -v s="$wall_seconds" 'BEGIN {printf "%.2f", n * 3600 / s}')
@@ -124,19 +158,54 @@ record_timing() {
   echo "num_shards=$NUM_SHARDS"
   echo "max_batch_size=$MAX_BATCH_SIZE"
   echo "max_wait_ms=$MAX_WAIT_MS"
+  echo "sharding=$SHARDING"
+  echo "weight_profile=$WEIGHT_PROFILE"
+  echo "video_mode=$VIDEO_MODE"
+  echo "eval_num_threads=$EVAL_NUM_THREADS"
+  echo "encode_max_batch_size=$ENCODE_MAX_BATCH_SIZE"
+  echo "encode_max_wait_ms=$ENCODE_MAX_WAIT_MS"
+  echo "encode_max_total_frames=$ENCODE_MAX_TOTAL_FRAMES"
+  echo "cpu_affinity=$CPU_AFFINITY"
+  echo "lazy_history_encode=$LAZY_HISTORY_ENCODE"
+  echo "history_transport_dtype=$HISTORY_TRANSPORT_DTYPE"
+  echo "jax_cache_dir=$JAX_CACHE_DIR"
   echo "policy_repo=$POLICY_REPO"
   echo "kit_root=$KIT_ROOT"
 } > "$TIMING_FILE"
 
-echo "OUT=$OUT seed=$SEED shards=$NUM_SHARDS episodes=$EPISODES sharding=global_round_robin_v1 serving=stateless_batched" \
+if [[ "$SHARDING" =~ ^(balanced_lpt_v1|dynamic_queue_v1|balanced_steal_v1)$ && ! -f "$WEIGHT_PROFILE" ]]; then
+  echo "$SHARDING requires WEIGHT_PROFILE, got: $WEIGHT_PROFILE" >&2
+  exit 1
+fi
+if [[ "$HISTORY_TRANSPORT_DTYPE" != "float16" && "$HISTORY_TRANSPORT_DTYPE" != "float32" ]]; then
+  echo "HISTORY_TRANSPORT_DTYPE must be float16 or float32" >&2
+  exit 1
+fi
+if [[ "$CPU_AFFINITY" != "none" && "$CPU_AFFINITY" != "per_gpu_v1" ]]; then
+  echo "unsupported CPU_AFFINITY: $CPU_AFFINITY" >&2
+  exit 1
+fi
+if [[ "$LAZY_HISTORY_ENCODE" != "true" && "$LAZY_HISTORY_ENCODE" != "false" ]]; then
+  echo "LAZY_HISTORY_ENCODE must be true or false" >&2
+  exit 1
+fi
+
+echo "OUT=$OUT seed=$SEED shards=$NUM_SHARDS episodes=$EPISODES sharding=$SHARDING serving=stateless_batched" \
   | tee "$OUT/run_config.txt"
+SHARD_ARGS=(
+  --out "$OUT"
+  --num-shards "$NUM_SHARDS"
+  --episodes "$EPISODES"
+  --policy-name "$POLICY_NAME"
+  --ckpt-id "$CKPT_ID"
+  --seed "$SEED"
+  --sharding "$SHARDING"
+)
+if [[ -n "$WEIGHT_PROFILE" ]]; then
+  SHARD_ARGS+=(--weight-profile "$WEIGHT_PROFILE")
+fi
 "$EVAL_PY" "$KIT_ROOT/orchestration/seed_episode_shards.py" \
-  --out "$OUT" \
-  --num-shards "$NUM_SHARDS" \
-  --episodes "$EPISODES" \
-  --policy-name "$POLICY_NAME" \
-  --ckpt-id "$CKPT_ID" \
-  --seed "$SEED" \
+  "${SHARD_ARGS[@]}" \
   | tee -a "$OUT/run_config.txt"
 
 SERVER_LD_PATH=$(find "$SERVER_SITE_PACKAGES/nvidia" -maxdepth 2 -name lib -type d 2>/dev/null | tr '\n' ':')
@@ -148,13 +217,23 @@ for gpu in $(seq 0 $((NUM_GPUS - 1))); do
   port=$((BASE_PORT + gpu))
   (
     cd "$POLICY_REPO"
-    env \
+    affinity_prefix=()
+    if [[ "$CPU_AFFINITY" == "per_gpu_v1" ]]; then
+      affinity_prefix=(
+        numactl
+        --physcpubind="$(gpu_cpu_list "$gpu")"
+        --membind="$(gpu_numa_node "$gpu")"
+      )
+    fi
+    "${affinity_prefix[@]}" env \
       CUDA_VISIBLE_DEVICES="$gpu" \
       LD_LIBRARY_PATH="$SERVER_LD_PATH" \
       OPENPI_DATA_HOME="$OPENPI_DATA_HOME" \
       PYTHONPATH="$SERVER_PYTHONPATH" \
       XLA_PYTHON_CLIENT_PREALLOCATE=false \
       XLA_PYTHON_CLIENT_MEM_FRACTION="$MEM_FRACTION" \
+      JAX_COMPILATION_CACHE_DIR="$JAX_CACHE_DIR" \
+      JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0 \
       "$SERVER_PY" scripts/serve_policy.py \
         --seed="$SEED" \
         --port="$port" \
@@ -162,6 +241,9 @@ for gpu in $(seq 0 $((NUM_GPUS - 1))); do
         --max-batch-size="$MAX_BATCH_SIZE" \
         --max-wait-ms="$MAX_WAIT_MS" \
         --max-queue-size="$MAX_QUEUE_SIZE" \
+        --encode-max-batch-size="$ENCODE_MAX_BATCH_SIZE" \
+        --encode-max-wait-ms="$ENCODE_MAX_WAIT_MS" \
+        --encode-max-total-frames="$ENCODE_MAX_TOTAL_FRAMES" \
         policy:checkpoint \
         --policy.config=mme_vla_suite \
         --policy.dir="$CKPT"
@@ -195,7 +277,26 @@ for shard in $(seq 0 $((NUM_SHARDS - 1))); do
   shard_dir="$OUT/shard${shard}"
   (
     cd "$POLICY_REPO/examples/robomme"
-    env \
+    affinity_prefix=()
+    if [[ "$CPU_AFFINITY" == "per_gpu_v1" ]]; then
+      affinity_prefix=(
+        numactl
+        --physcpubind="$(gpu_cpu_list "$gpu")"
+        --membind="$(gpu_numa_node "$gpu")"
+      )
+    fi
+    queue_args=()
+    if [[ "$SHARDING" =~ ^(dynamic_queue_v1|balanced_steal_v1)$ ]]; then
+      queue_args=(
+        --args.work-queue-dir="$OUT/work_queue"
+        --args.worker-id="$shard"
+      )
+    fi
+    lazy_encode_args=()
+    if [[ "$LAZY_HISTORY_ENCODE" == "true" ]]; then
+      lazy_encode_args=(--args.lazy-history-encode)
+    fi
+    "${affinity_prefix[@]}" env \
       LD_LIBRARY_PATH="$NVIDIA_RENDER_LIBS" \
       VK_ICD_FILENAMES="$NVIDIA_VK_ICD" \
       __EGL_VENDOR_LIBRARY_FILENAMES="$NVIDIA_EGL_VENDOR" \
@@ -203,6 +304,10 @@ for shard in $(seq 0 $((NUM_SHARDS - 1))); do
       EGL_PLATFORM=surfaceless \
       XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
       CUDA_VISIBLE_DEVICES="$gpu" \
+      OMP_NUM_THREADS="$EVAL_NUM_THREADS" \
+      MKL_NUM_THREADS="$EVAL_NUM_THREADS" \
+      OPENBLAS_NUM_THREADS="$EVAL_NUM_THREADS" \
+      NUMEXPR_NUM_THREADS="$EVAL_NUM_THREADS" \
       PYTHONPATH="$EVAL_PYTHONPATH" \
       "$EVAL_PY" eval.py \
         --args.host=127.0.0.1 \
@@ -211,8 +316,12 @@ for shard in $(seq 0 $((NUM_SHARDS - 1))); do
         --args.model-seed="$SEED" \
         --args.policy-name="$POLICY_NAME" \
         --args.model-ckpt-id="$CKPT_ID" \
+        --args.video-mode="$VIDEO_MODE" \
+        --args.history-transport-dtype="$HISTORY_TRANSPORT_DTYPE" \
+        "${lazy_encode_args[@]}" \
         --args.num-episodes="$EPISODES" \
         --args.only-tasks="$ALL_TASKS" \
+        "${queue_args[@]}" \
         --args.save-dir="$shard_dir"
   ) > "$OUT/logs/eval_shard${shard}.log" 2>&1 &
   EVAL_PIDS+=("$!")
@@ -234,8 +343,15 @@ trap - EXIT INT TERM
 "$EVAL_PY" "$KIT_ROOT/orchestration/merge_robomme.py" "$OUT" \
   | tee "$OUT/FINAL_REPORT.txt"
 
-total_completed=$(find "$OUT" -type f -name '*.mp4' | wc -l)
-if (( FAIL == 0 && total_completed >= EXPECTED_EPISODES )); then
+total_completed=$(completed_count)
+error_count=$("$EVAL_PY" -c '
+import json, sys
+from pathlib import Path
+p = Path(sys.argv[1]) / "aggregate.json"
+payload = json.loads(p.read_text()) if p.exists() else {}
+print(sum(payload.get("errors", {}).values()))
+' "$OUT")
+if (( FAIL == 0 && total_completed >= EXPECTED_EPISODES && error_count == 0 )); then
   record_timing complete
   exit 0
 fi
