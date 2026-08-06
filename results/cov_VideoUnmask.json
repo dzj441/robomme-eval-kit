@@ -1,0 +1,50 @@
+{
+  "VideoUnmask": {
+    "n_ep": 20,
+    "T": 233.8,
+    "demo_frac": 0.30519787404245136,
+    "exec_start": 66.0,
+    "spacing_at_decision": 7.509677419354839,
+    "spacing_at_end": 7.509677419354839,
+    "seg_per_ep": 3.5,
+    "seg_len": 66.52,
+    "seg_min": 9.7,
+    "missed_rate": 0.0
+  },
+  "ButtonUnmask": {
+    "n_ep": 20,
+    "T": 281.65,
+    "demo_frac": 0.0,
+    "exec_start": 0.0,
+    "spacing_at_decision": 9.053225806451612,
+    "spacing_at_end": 9.053225806451612,
+    "seg_per_ep": 3.5,
+    "seg_len": 80.79666666666668,
+    "seg_min": 8.2,
+    "missed_rate": 0.0
+  },
+  "VideoUnmaskSwap": {
+    "n_ep": 20,
+    "T": 350.15,
+    "demo_frac": 0.4420882158717855,
+    "exec_start": 148.5,
+    "spacing_at_decision": 11.26290322580645,
+    "spacing_at_end": 11.26290322580645,
+    "seg_per_ep": 4.0,
+    "seg_len": 88.05666666666669,
+    "seg_min": 7.85,
+    "missed_rate": 0.0
+  },
+  "ButtonUnmaskSwap": {
+    "n_ep": 20,
+    "T": 419.6,
+    "demo_frac": 0.0,
+    "exec_start": 0.0,
+    "spacing_at_decision": 13.503225806451614,
+    "spacing_at_end": 13.503225806451614,
+    "seg_per_ep": 5.2,
+    "seg_len": 80.86666666666667,
+    "seg_min": 7.65,
+    "missed_rate": 0.0
+  }
+}

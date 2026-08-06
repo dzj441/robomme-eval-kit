@@ -1,0 +1,464 @@
+{
+  "base": {
+    "BinFill": [
+      23,
+      50
+    ],
+    "StopCube": [
+      22,
+      50
+    ],
+    "PickXtimes": [
+      47,
+      50
+    ],
+    "SwingXtimes": [
+      47,
+      50
+    ],
+    "VideoUnmask": [
+      17,
+      50
+    ],
+    "ButtonUnmask": [
+      13,
+      50
+    ],
+    "VideoUnmaskSwap": [
+      14,
+      50
+    ],
+    "ButtonUnmaskSwap": [
+      7,
+      50
+    ],
+    "PickHighlight": [
+      10,
+      50
+    ],
+    "VideoRepick": [
+      14,
+      50
+    ],
+    "VideoPlaceButton": [
+      30,
+      50
+    ],
+    "VideoPlaceOrder": [
+      21,
+      50
+    ],
+    "MoveCube": [
+      43,
+      50
+    ],
+    "InsertPeg": [
+      4,
+      50
+    ],
+    "PatternLock": [
+      26,
+      50
+    ],
+    "RouteStick": [
+      34,
+      50
+    ]
+  },
+  "off": {
+    "BinFill": [
+      12,
+      50
+    ],
+    "StopCube": [
+      4,
+      50
+    ],
+    "PickXtimes": [
+      14,
+      50
+    ],
+    "SwingXtimes": [
+      14,
+      50
+    ],
+    "VideoUnmask": [
+      15,
+      50
+    ],
+    "ButtonUnmask": [
+      1,
+      50
+    ],
+    "VideoUnmaskSwap": [
+      7,
+      50
+    ],
+    "ButtonUnmaskSwap": [
+      0,
+      50
+    ],
+    "PickHighlight": [
+      0,
+      50
+    ],
+    "VideoRepick": [
+      0,
+      50
+    ],
+    "VideoPlaceButton": [
+      16,
+      50
+    ],
+    "VideoPlaceOrder": [
+      12,
+      50
+    ],
+    "MoveCube": [
+      21,
+      50
+    ],
+    "InsertPeg": [
+      1,
+      50
+    ],
+    "PatternLock": [
+      3,
+      50
+    ],
+    "RouteStick": [
+      0,
+      50
+    ]
+  },
+  "repeatcur": {
+    "BinFill": [
+      16,
+      50
+    ],
+    "StopCube": [
+      4,
+      50
+    ],
+    "PickXtimes": [
+      14,
+      50
+    ],
+    "SwingXtimes": [
+      17,
+      50
+    ],
+    "VideoUnmask": [
+      9,
+      50
+    ],
+    "ButtonUnmask": [
+      3,
+      50
+    ],
+    "VideoUnmaskSwap": [
+      9,
+      50
+    ],
+    "ButtonUnmaskSwap": [
+      0,
+      50
+    ],
+    "PickHighlight": [
+      3,
+      50
+    ],
+    "VideoRepick": [
+      1,
+      50
+    ],
+    "VideoPlaceButton": [
+      14,
+      50
+    ],
+    "VideoPlaceOrder": [
+      15,
+      50
+    ],
+    "MoveCube": [
+      9,
+      50
+    ],
+    "InsertPeg": [
+      0,
+      50
+    ],
+    "PatternLock": [
+      2,
+      50
+    ],
+    "RouteStick": [
+      1,
+      50
+    ]
+  },
+  "timeshuf": {
+    "BinFill": [
+      13,
+      50
+    ],
+    "StopCube": [
+      1,
+      50
+    ],
+    "PickXtimes": [
+      17,
+      50
+    ],
+    "SwingXtimes": [
+      7,
+      50
+    ],
+    "VideoUnmask": [
+      15,
+      50
+    ],
+    "ButtonUnmask": [
+      7,
+      50
+    ],
+    "VideoUnmaskSwap": [
+      9,
+      50
+    ],
+    "ButtonUnmaskSwap": [
+      1,
+      50
+    ],
+    "PickHighlight": [
+      7,
+      50
+    ],
+    "VideoRepick": [
+      2,
+      50
+    ],
+    "VideoPlaceButton": [
+      14,
+      50
+    ],
+    "VideoPlaceOrder": [
+      14,
+      50
+    ],
+    "MoveCube": [
+      20,
+      50
+    ],
+    "InsertPeg": [
+      0,
+      50
+    ],
+    "PatternLock": [
+      7,
+      50
+    ],
+    "RouteStick": [
+      2,
+      50
+    ]
+  },
+  "budget8": {
+    "BinFill": [
+      8,
+      50
+    ],
+    "StopCube": [
+      2,
+      50
+    ],
+    "PickXtimes": [
+      16,
+      50
+    ],
+    "SwingXtimes": [
+      8,
+      50
+    ],
+    "VideoUnmask": [
+      18,
+      50
+    ],
+    "ButtonUnmask": [
+      4,
+      50
+    ],
+    "VideoUnmaskSwap": [
+      10,
+      50
+    ],
+    "ButtonUnmaskSwap": [
+      3,
+      50
+    ],
+    "PickHighlight": [
+      4,
+      50
+    ],
+    "VideoRepick": [
+      6,
+      50
+    ],
+    "VideoPlaceButton": [
+      12,
+      50
+    ],
+    "VideoPlaceOrder": [
+      15,
+      50
+    ],
+    "MoveCube": [
+      19,
+      50
+    ],
+    "InsertPeg": [
+      0,
+      50
+    ],
+    "PatternLock": [
+      7,
+      50
+    ],
+    "RouteStick": [
+      6,
+      50
+    ]
+  },
+  "budget128": {
+    "BinFill": [
+      15,
+      50
+    ],
+    "StopCube": [
+      4,
+      50
+    ],
+    "PickXtimes": [
+      16,
+      50
+    ],
+    "SwingXtimes": [
+      15,
+      50
+    ],
+    "VideoUnmask": [
+      15,
+      50
+    ],
+    "ButtonUnmask": [
+      10,
+      50
+    ],
+    "VideoUnmaskSwap": [
+      12,
+      50
+    ],
+    "ButtonUnmaskSwap": [
+      7,
+      50
+    ],
+    "PickHighlight": [
+      9,
+      50
+    ],
+    "VideoRepick": [
+      0,
+      50
+    ],
+    "VideoPlaceButton": [
+      13,
+      50
+    ],
+    "VideoPlaceOrder": [
+      15,
+      50
+    ],
+    "MoveCube": [
+      20,
+      50
+    ],
+    "InsertPeg": [
+      0,
+      50
+    ],
+    "PatternLock": [
+      5,
+      50
+    ],
+    "RouteStick": [
+      4,
+      50
+    ]
+  },
+  "frames128": {
+    "BinFill": [
+      13,
+      50
+    ],
+    "StopCube": [
+      8,
+      50
+    ],
+    "PickXtimes": [
+      23,
+      50
+    ],
+    "SwingXtimes": [
+      32,
+      50
+    ],
+    "VideoUnmask": [
+      18,
+      50
+    ],
+    "ButtonUnmask": [
+      8,
+      50
+    ],
+    "VideoUnmaskSwap": [
+      12,
+      50
+    ],
+    "ButtonUnmaskSwap": [
+      0,
+      50
+    ],
+    "PickHighlight": [
+      10,
+      50
+    ],
+    "VideoRepick": [
+      8,
+      50
+    ],
+    "VideoPlaceButton": [
+      22,
+      50
+    ],
+    "VideoPlaceOrder": [
+      18,
+      50
+    ],
+    "MoveCube": [
+      33,
+      50
+    ],
+    "InsertPeg": [
+      4,
+      50
+    ],
+    "PatternLock": [
+      16,
+      50
+    ],
+    "RouteStick": [
+      21,
+      50
+    ]
+  }
+}

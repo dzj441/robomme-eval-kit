@@ -1,0 +1,50 @@
+{
+  "BinFill": {
+    "n_ep": 20,
+    "T": 601.5,
+    "demo_frac": 0.0,
+    "exec_start": 0.0,
+    "spacing_at_decision": 19.37096774193548,
+    "spacing_at_end": 19.37096774193548,
+    "seg_per_ep": 7.3,
+    "seg_len": 81.95125,
+    "seg_min": 38.15,
+    "missed_rate": 0.0
+  },
+  "StopCube": {
+    "n_ep": 20,
+    "T": 331.7,
+    "demo_frac": 0.0,
+    "exec_start": 0.0,
+    "spacing_at_decision": 10.667741935483871,
+    "spacing_at_end": 10.667741935483871,
+    "seg_per_ep": 3.95,
+    "seg_len": 83.47083333333333,
+    "seg_min": 28.15,
+    "missed_rate": 0.0
+  },
+  "PickXtimes": {
+    "n_ep": 20,
+    "T": 562.65,
+    "demo_frac": 0.0,
+    "exec_start": 0.0,
+    "spacing_at_decision": 18.11774193548387,
+    "spacing_at_end": 18.11774193548387,
+    "seg_per_ep": 7.4,
+    "seg_len": 77.56041666666667,
+    "seg_min": 38.05,
+    "missed_rate": 0.0
+  },
+  "SwingXtimes": {
+    "n_ep": 20,
+    "T": 455.55,
+    "demo_frac": 0.0,
+    "exec_start": 0.0,
+    "spacing_at_decision": 14.662903225806454,
+    "spacing_at_end": 14.662903225806454,
+    "seg_per_ep": 8.6,
+    "seg_len": 53.325,
+    "seg_min": 29.85,
+    "missed_rate": 0.0
+  }
+}

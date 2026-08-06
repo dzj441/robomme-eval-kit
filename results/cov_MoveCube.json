@@ -1,0 +1,50 @@
+{
+  "MoveCube": {
+    "n_ep": 20,
+    "T": 403.5,
+    "demo_frac": 0.5652851778502404,
+    "exec_start": 225.1,
+    "spacing_at_decision": 12.983870967741936,
+    "spacing_at_end": 12.983870967741936,
+    "seg_per_ep": 5.4,
+    "seg_len": 73.99999999999999,
+    "seg_min": 9.4,
+    "missed_rate": 0.0
+  },
+  "InsertPeg": {
+    "n_ep": 20,
+    "T": 479.1,
+    "demo_frac": 0.4998373408224512,
+    "exec_start": 239.45,
+    "spacing_at_decision": 15.42258064516129,
+    "spacing_at_end": 15.42258064516129,
+    "seg_per_ep": 5.0,
+    "seg_len": 95.82000000000001,
+    "seg_min": 9.3,
+    "missed_rate": 0.0
+  },
+  "PatternLock": {
+    "n_ep": 20,
+    "T": 210.2,
+    "demo_frac": 0.5,
+    "exec_start": 105.1,
+    "spacing_at_decision": 6.748387096774195,
+    "spacing_at_end": 6.748387096774195,
+    "seg_per_ep": 6.5,
+    "seg_len": 32.1016971916972,
+    "seg_min": 10.0,
+    "missed_rate": 0.0
+  },
+  "RouteStick": {
+    "n_ep": 20,
+    "T": 355.0,
+    "demo_frac": 0.5,
+    "exec_start": 177.5,
+    "spacing_at_decision": 11.419354838709676,
+    "spacing_at_end": 11.419354838709676,
+    "seg_per_ep": 6.6,
+    "seg_len": 59.089466089466086,
+    "seg_min": 7.0,
+    "missed_rate": 0.0
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "PickHighlight": {
+    "n_ep": 20,
+    "T": 369.2,
+    "demo_frac": 0.0,
+    "exec_start": 0.0,
+    "spacing_at_decision": 11.877419354838707,
+    "spacing_at_end": 11.877419354838707,
+    "seg_per_ep": 4.5,
+    "seg_len": 82.3295238095238,
+    "seg_min": 15.8,
+    "missed_rate": 0.0
+  },
+  "VideoRepick": {
+    "n_ep": 20,
+    "T": 701.5,
+    "demo_frac": 0.39888105027427917,
+    "exec_start": 275.25,
+    "spacing_at_decision": 22.596774193548388,
+    "spacing_at_end": 22.596774193548388,
+    "seg_per_ep": 8.75,
+    "seg_len": 80.22689935064935,
+    "seg_min": 39.35,
+    "missed_rate": 0.0
+  },
+  "VideoPlaceButton": {
+    "n_ep": 20,
+    "T": 980.25,
+    "demo_frac": 0.7734827906440385,
+    "exec_start": 757.3,
+    "spacing_at_decision": 31.588709677419352,
+    "spacing_at_end": 31.588709677419352,
+    "seg_per_ep": 11.0,
+    "seg_len": 89.11363636363636,
+    "seg_min": 15.2,
+    "missed_rate": 0.0
+  },
+  "VideoPlaceOrder": {
+    "n_ep": 20,
+    "T": 1171.3,
+    "demo_frac": 0.8060834614752388,
+    "exec_start": 946.05,
+    "spacing_at_decision": 37.751612903225805,
+    "spacing_at_end": 37.751612903225805,
+    "seg_per_ep": 13.2,
+    "seg_len": 88.60396270396272,
+    "seg_min": 14.6,
+    "missed_rate": 0.0
+  }
+}

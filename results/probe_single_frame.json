@@ -1,0 +1,16 @@
+{
+  "n": 600,
+  "chance": 0.36,
+  "aggregate_reference": {
+    "samp32_linear": 0.615,
+    "note": "32-frame mean+max, C=1.0 spatial"
+  },
+  "pooled_2048": {
+    "acc": 0.54,
+    "sd": 0.03431876713662334
+  },
+  "spatial_32768": {
+    "acc": 0.5816666666666667,
+    "sd": 0.02603416558635553
+  }
+}
