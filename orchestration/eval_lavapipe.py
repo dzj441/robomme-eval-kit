@@ -10,11 +10,11 @@ from __future__ import annotations
 import runpy
 import sys
 
-sys.path.insert(0, "/datadrive1/dzj/RoboMME")
+sys.path.insert(0, "/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/RoboMME")
 import lavapipe_patch  # noqa: E402
 
 print(f"[lavapipe] {lavapipe_patch.engage()}", flush=True)
 
-EVAL = "/home/qid/dzj/RoboMME_policy/examples/robomme/eval.py"
-sys.path.insert(0, "/home/qid/dzj/RoboMME_policy/examples/robomme")
+EVAL = "/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/RoboMME_policy/examples/robomme/eval.py"
+sys.path.insert(0, "/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/RoboMME_policy/examples/robomme")
 runpy.run_path(EVAL, run_name="__main__")

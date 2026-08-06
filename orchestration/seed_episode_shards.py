@@ -14,13 +14,13 @@ The sentinel must not be "error" (setup_log_dict strips those and re-runs them)
 and must be summable -- eval.py finishes with
 ``sum(log_dict[task].values())``, so a string sentinel makes that raise, log.json
 never gets written, and the outer ``while not exists(log.json)`` spins forever.
-``False`` is safe; ownership at merge time comes from ``ep % N == shard``, not
-from the sentinel value.
+``False`` is safe; ownership at merge time comes from the deterministic global
+round-robin formula, not from the sentinel value.
 
-Every shard takes all 16 tasks and the episodes with ``episode_id % N == shard``,
-so each shard gets an identical task mix. That removes the makespan floor of
-task-level sharding, where the slowest single task (VideoPlaceOrder, ~28 min for
-its 50 episodes) bounded the whole run no matter how many shards were added.
+Every shard takes all 16 tasks. Flattening ``task x episode`` into one global
+index and assigning ``global_index % N`` rotates each task's remainder across
+shards. For 16 tasks x 50 episodes over 16 shards, every shard owns exactly 50
+episodes while retaining 3 or 4 episodes from every task.
 """
 
 from __future__ import annotations
@@ -36,6 +36,10 @@ TASKS = [
     "PickHighlight", "VideoRepick", "VideoPlaceButton", "VideoPlaceOrder",
     "MoveCube", "InsertPeg", "PatternLock", "RouteStick",
 ]
+
+
+def owner_shard(task_index: int, episode_id: int, episodes: int, num_shards: int) -> int:
+    return (task_index * episodes + episode_id) % num_shards
 
 
 def main() -> None:
@@ -57,13 +61,22 @@ def main() -> None:
             task: {
                 str(ep): SENTINEL
                 for ep in range(a.episodes)
-                if ep % a.num_shards != shard
+                if owner_shard(task_index, ep, a.episodes, a.num_shards) != shard
             }
-            for task in TASKS
+            for task_index, task in enumerate(TASKS)
         }
         (d / "progress.json").write_text(json.dumps(progress, indent=1))
-        mine = sum(1 for ep in range(a.episodes) if ep % a.num_shards == shard)
-        print(f"  shard{shard}: {mine} eps/task x {len(TASKS)} tasks = {mine*len(TASKS)}")
+        mine_by_task = [
+            sum(
+                1 for ep in range(a.episodes)
+                if owner_shard(task_index, ep, a.episodes, a.num_shards) == shard
+            )
+            for task_index in range(len(TASKS))
+        ]
+        print(
+            f"  shard{shard}: {sum(mine_by_task)} episodes "
+            f"({min(mine_by_task)}-{max(mine_by_task)} eps/task)"
+        )
 
 
 if __name__ == "__main__":

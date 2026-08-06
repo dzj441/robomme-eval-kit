@@ -17,6 +17,12 @@ from pathlib import Path
 ROOT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/datadrive1/dzj/RoboMME/eval_out")
 RUNS = sorted(ROOT.glob("ultra3_seed*")) or sorted(ROOT.glob("fsm_seed*"))
 
+
+def shard_index(path: Path, run: Path) -> int:
+    shard_dir = path.relative_to(run).parts[0]
+    return int(shard_dir.removeprefix("shard"))
+
+
 SUITE = {
     "BinFill": "Counting", "PickXtimes": "Counting",
     "SwingXtimes": "Counting", "StopCube": "Counting",
@@ -27,6 +33,13 @@ SUITE = {
     "MoveCube": "Imitation", "InsertPeg": "Imitation",
     "PatternLock": "Imitation", "RouteStick": "Imitation",
 }
+TASK_ORDER = [
+    "BinFill", "StopCube", "PickXtimes", "SwingXtimes",
+    "VideoUnmask", "ButtonUnmask", "VideoUnmaskSwap", "ButtonUnmaskSwap",
+    "PickHighlight", "VideoRepick", "VideoPlaceButton", "VideoPlaceOrder",
+    "MoveCube", "InsertPeg", "PatternLock", "RouteStick",
+]
+TASK_INDEX = {task: index for index, task in enumerate(TASK_ORDER)}
 PAPER = {
     "BinFill": (39.56, 5.27), "PickXtimes": (87.33, 2.45),
     "SwingXtimes": (92.00, 2.24), "StopCube": (42.00, 11.36),
@@ -43,16 +56,30 @@ per_seed: dict[str, dict[str, float]] = {}
 for run in RUNS:
     seed = run.name.split("seed")[-1]
     tasks: dict[str, float] = {}
-    shards = sorted(run.glob("shard*/**/progress.json"),
-                    key=lambda p: int(str(p).split("shard")[1].split("/")[0]))
+    shards = sorted(run.glob("shard*/**/progress.json"), key=lambda p: shard_index(p, run))
     n = len(shards)
+    config_path = run / "run_config.txt"
+    config = config_path.read_text() if config_path.exists() else ""
+    global_round_robin = "sharding=global_round_robin_v1" in config
+    episodes_per_task = 50
+    for field in config.split():
+        if field.startswith("episodes="):
+            episodes_per_task = int(field.split("=", 1)[1])
+            break
     owned: dict[str, dict[str, object]] = {}
     for prog in shards:
-        sh = int(str(prog).split("shard")[1].split("/")[0])
+        sh = shard_index(prog, run)
         for task, eps in json.loads(prog.read_text()).items():
             for ep, v in eps.items():
-                # episode-level sharding: a shard owns ep % n == shard
-                if n == 1 or int(ep) % n == sh:
+                if n == 1:
+                    is_owned = True
+                elif global_round_robin:
+                    global_index = TASK_INDEX[task] * episodes_per_task + int(ep)
+                    is_owned = global_index % n == sh
+                else:
+                    # Backward compatibility for legacy per-task round-robin runs.
+                    is_owned = int(ep) % n == sh
+                if is_owned:
                     owned.setdefault(task, {})[ep] = v
     for task, eps in owned.items():
         vals = list(eps.values())

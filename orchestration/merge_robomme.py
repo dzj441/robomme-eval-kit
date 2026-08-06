@@ -8,6 +8,20 @@ from pathlib import Path
 
 OUT = Path(sys.argv[1])
 
+
+def shard_index(path: Path) -> int:
+    shard_dir = path.relative_to(OUT).parts[0]
+    return int(shard_dir.removeprefix("shard"))
+
+
+TASK_ORDER = [
+    "BinFill", "StopCube", "PickXtimes", "SwingXtimes",
+    "VideoUnmask", "ButtonUnmask", "VideoUnmaskSwap", "ButtonUnmaskSwap",
+    "PickHighlight", "VideoRepick", "VideoPlaceButton", "VideoPlaceOrder",
+    "MoveCube", "InsertPeg", "PatternLock", "RouteStick",
+]
+TASK_INDEX = {task: index for index, task in enumerate(TASK_ORDER)}
+
 SUITE = {
     "BinFill": "Counting", "PickXtimes": "Counting",
     "SwingXtimes": "Counting", "StopCube": "Counting",
@@ -36,17 +50,29 @@ PAPER_AVG = 44.51
 # "skip", so the union is what defines a task's rate.
 # setup_save_directory nests results under <policy>/ckpt<id>/seed<seed>/
 episodes: dict[str, dict[str, object]] = {}
-_shards = sorted(OUT.glob("shard*/**/progress.json"),
-                 key=lambda p: int(str(p).split("shard")[1].split("/")[0]))
+_shards = sorted(OUT.glob("shard*/**/progress.json"), key=shard_index)
 _n = len(_shards)
+_config_path = OUT / "run_config.txt"
+_config = _config_path.read_text() if _config_path.exists() else ""
+_global_round_robin = "sharding=global_round_robin_v1" in _config
+_episodes_per_task = 50
+for _field in _config.split():
+    if _field.startswith("episodes="):
+        _episodes_per_task = int(_field.split("=", 1)[1])
+        break
 for prog in _shards:
-    shard = int(str(prog).split("shard")[1].split("/")[0])
+    shard = shard_index(prog)
     for task, eps in json.loads(prog.read_text()).items():
         for ep, v in eps.items():
-            # Under episode-level sharding a shard's own slice is ep % n == shard;
-            # everything else is a pre-seeded placeholder. With one shard per task
-            # (task-level sharding) n == 1, so every entry is owned.
-            if v != "skip" and (_n == 1 or int(ep) % _n == shard):
+            if _n == 1:
+                owned = True
+            elif _global_round_robin:
+                global_index = TASK_INDEX[task] * _episodes_per_task + int(ep)
+                owned = global_index % _n == shard
+            else:
+                # Backward compatibility for runs created before global round-robin.
+                owned = int(ep) % _n == shard
+            if v != "skip" and owned:
                 episodes.setdefault(task, {})[ep] = v
 
 ours: dict[str, float] = {}
