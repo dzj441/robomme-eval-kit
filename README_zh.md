@@ -9,39 +9,168 @@
 
 两者评测错误均为 0。旧的 uncached legacy 三轮也是 370–371/800，但 episode map 两两有 55–65 个 flip。trace 证明首个分叉来自 fresh XLA GPU autotune 生成的不同 executable；即使在同一 GPU 上串行编译两个独立空 cache 也会发生，不只是多进程竞争。
 
-## 两个推荐配置
+## 四种 8-GPU 评测方案
 
-`orchestration/run_8gpu_deterministic_parity.sh` 用于正式对照，核心是在下面吞吐配置上增加：
+以下结果统一使用 seed 7、checkpoint 79999、16 tasks × 50 episodes，共 800 episodes。
+
+| 方案 | Server / Env | 关键数值路径 | 时间 | Success / SR | 用途 |
+|---|---:|---|---:|---:|---|
+| 原始 legacy | 16 / 16 | stateful、默认 XLA autotune、各 server 独立首次编译 | 平均 1413 s | 370–371 / 46.25–46.375% | 原始基线 |
+| 历史最快 680 秒 | 8 / 32 | stateless、B=1 显式 noise、bucket encode、warm cache | 680 s | 362 / 45.25% | 历史最快，parity 修复前 |
+| 当前最快约 710 秒 | 8 / 32 | stateless、legacy B=1 RNG graph、bucket encode、autotune + 隔离预热 | 716 s | 366 / 45.75% | 当前推荐吞吐配置 |
+| deterministic exact | 8 / 32 | legacy B=1 RNG graph、exact encode、autotune=0、隔离预热 | 894 / 912 s | 两次均为 370 / 46.25% | 正式、跨空 cache 可复现 |
+
+### 1. 原始 legacy：16 servers / 16 envs
+
+原始方案在每张 GPU 上启动两个 stateful policy server，共 16 个 server；每个 server 只服务一个 env worker。episode history、step index 和 RNG 都保存在对应 server 内。
 
 ```text
-LEGACY_EXACT_ENCODE=true
-ENCODE_MAX_TOTAL_FRAMES=4096
-DETERMINISTIC_PREWARM=true
-SERVER_XLA_FLAGS=--xla_gpu_autotune_level=0
+GPU 数量                  8
+每卡 server               2
+总 server                 16
+每卡 env                  2
+总 env                    16
+sharding                  global_round_robin_v1
+history                   保存在 server
+model batch               B=1
+video                     保存
+XLA autotune              开启
+统一编译预热              无
 ```
 
-它让 B=1 `_sample_actions`、每次新增 history 的 vision encode、frame sampling 和 legacy 完全走同一数值路径。
+三个完整运行分别为：
 
-`orchestration/run_8gpu_fastest.sh` 固化当前机器上的最大吞吐配置：
+```text
+1405 s    371/800    46.375%
+1423 s    370/800    46.250%
+1411 s    370/800    46.250%
+```
 
-| 参数 | 默认值 | 说明 |
-|---|---:|---|
-| `NUM_GPUS` | 8 | 每张 GPU 启动一个 policy server |
-| `CLIENTS_PER_GPU` | 4 | 每张 GPU 对应 4 个 RoboMME env worker，共 32 个 |
-| `MAX_BATCH_SIZE` | 1 | infer 不等待合批 |
-| `MAX_WAIT_MS` | 0 | 消除 queue deadline 延迟 |
-| `ENCODE_MAX_BATCH_SIZE` | 1 | history encode 单请求执行 |
-| `ENCODE_MAX_WAIT_MS` | 0 | encode 不等待合批 |
-| `SHARDING` | `balanced_steal_v1` | profile 初始均衡，完成自己队列后可偷取尾部任务 |
-| `VIDEO_MODE` | `off` | 关闭视频编码和写盘 |
-| `EVAL_NUM_THREADS` | 1 | 限制每个 env 的 BLAS/OpenMP 线程，避免 32 workers 过度争抢 CPU |
-| `CPU_AFFINITY` | `per_gpu_v1` | env 与 server 固定到对应 GPU 所在 NUMA 节点 |
-| `LAZY_HISTORY_ENCODE` | `false` | 使用 eager 历史编码，当前推荐 |
-| `HISTORY_TRANSPORT_DTYPE` | `float32` | client/server 之间的 embedding 传输 dtype |
-| `DETERMINISTIC_PREWARM` | `true` | 空 cache 时先用单 GPU 进程预热，再并行启动 server |
-| `SERVER_XLA_FLAGS` | 吞吐模式为空 | strict preset 设为 `--xla_gpu_autotune_level=0`，让不同空 cache 也生成一致 executable |
+聚合 SR 看起来稳定，但三轮 episode outcome 两两有 55、65、64 个 flip，共 92 个 episode 至少翻转过一次。
 
-无状态 server 支持真正的动态 batching，但在这个 workload 上，环境步进、episode 长度和 history encode 使 infer 请求错峰。实测等待合批没有抵消 queue delay，`B=1 / wait=0` 最快。这里的收益主要来自：一个模型实例安全共享给多个 env、增加环境并行度、关闭视频 I/O、CPU/NUMA 隔离，以及消除长尾。
+### 2. 历史最快：680 秒
+
+这是 parity 修复前的 stateless eager 版本：
+
+```text
+GPU 数量                  8
+每卡 server               1
+总 server                 8
+每卡 env                  4
+总 env                    32
+MAX_BATCH_SIZE            1
+MAX_WAIT_MS               0
+history encode            eager
+LAZY_HISTORY_ENCODE       false
+history encode shape      bucket padding
+encode batch / wait       1 / 0
+sharding                  balanced_steal_v1
+video                     off
+CPU affinity              per_gpu_v1
+transport dtype           float32
+JAX cache                 warm
+```
+
+该版本即使 B=1，也先显式生成 per-request noise，再调用 batched `_sample_actions`。数学上与 legacy 等价，但改变了 JAX graph 和 BF16 数值路径。
+
+```text
+680 s    362/800    45.25%    0 errors
+```
+
+这是所有已完成实验中 wall time 最小的一轮，但它属于历史实现，不是当前 HEAD 的正式运行入口。
+
+### 3. 当前最快：716 秒
+
+当前 `orchestration/run_8gpu_fastest.sh` 保留 680 秒方案的并行拓扑和调度方式，但修复了 B=1 policy path：
+
+```text
+GPU 数量                  8
+每卡 server               1
+总 server                 8
+每卡 env                  4
+总 env                    32
+MAX_BATCH_SIZE            1
+MAX_WAIT_MS               0
+history encode            eager
+LAZY_HISTORY_ENCODE       false
+LEGACY_EXACT_ENCODE       false
+history encode shape      bucket padding
+encode batch / wait       1 / 0
+sharding                  balanced_steal_v1
+video                     off
+CPU affinity              per_gpu_v1
+transport dtype           float32
+XLA autotune              开启
+deterministic prewarm     开启
+```
+
+B=1 时直接把 legacy sample key 传给 `_sample_actions`，由模型内部生成 noise，与 legacy wrapper 使用相同的 RNG/JAX graph。launcher 先由单一进程预热 action graph，再启动八个 server。
+
+```text
+716 s    366/800    45.75%    0 errors
+```
+
+相对历史 680 秒版本，当前方案慢 36 秒（约 5.3%），但增加 4 个 success，SR 提升 0.50 个百分点。36 秒差异不能全部解释为模型开销，因为两个数值路径会产生不同轨迹、episode 长度和尾部调度负载。
+
+运行入口：
+
+```bash
+bash orchestration/run_8gpu_fastest.sh
+```
+
+### 4. Deterministic exact：894–912 秒
+
+正式可复现方案继续使用 8 servers / 32 envs，但同时控制 history encode 和 XLA 编译：
+
+```text
+GPU 数量                  8
+每卡 server               1
+总 server                 8
+每卡 env                  4
+总 env                    32
+MAX_BATCH_SIZE            1
+MAX_WAIT_MS               0
+history encode            eager
+LAZY_HISTORY_ENCODE       false
+LEGACY_EXACT_ENCODE       true
+history encode padding    无
+encode batch / wait       1 / 0
+ENCODE_MAX_TOTAL_FRAMES   4096
+sharding                  balanced_steal_v1
+video                     off
+CPU affinity              per_gpu_v1
+transport dtype           float32
+SERVER_XLA_FLAGS          --xla_gpu_autotune_level=0
+deterministic prewarm     开启
+JAX cache                 独立 autotune0 cache
+```
+
+两个完全独立的空 cache 运行结果：
+
+```text
+Run 1    912 s    370/800    46.25%    0 errors
+Run 2    894 s    370/800    46.25%    0 errors
+```
+
+两轮 800 个 episode outcome 完全一致，0 flips。相对 legacy 平均 1413 秒，deterministic exact 平均 903 秒，节省约 510 秒（8.5 分钟），wall time 降低约 36%，吞吐提升约 1.56×。
+
+运行入口：
+
+```bash
+bash orchestration/run_8gpu_deterministic_parity.sh
+```
+
+### Lazy history encode
+
+上述三个 stateless 方案默认均不开 lazy：
+
+```text
+LAZY_HISTORY_ENCODE=false
+```
+
+lazy 完整实验为 681 秒、357/800（44.625%）。它没有比 eager 更快，SR 反而更低，因此不列为推荐方案。
+
+无状态 server 支持真正的动态 batching，但在这个 workload 上，环境步进、episode 长度和 history encode 使 infer 请求错峰。实测等待合批没有抵消 queue delay，`B=1 / wait=0` 最快。主要收益来自一个模型实例安全共享给多个 env、增加环境并行度、关闭视频 I/O、CPU/NUMA 隔离，以及消除长尾。
 
 ## 调度方案
 
