@@ -33,15 +33,18 @@ ENCODE_MAX_WAIT_MS=${ENCODE_MAX_WAIT_MS:-0}
 ENCODE_MAX_TOTAL_FRAMES=${ENCODE_MAX_TOTAL_FRAMES:-128}
 CPU_AFFINITY=${CPU_AFFINITY:-none}
 LAZY_HISTORY_ENCODE=${LAZY_HISTORY_ENCODE:-false}
+LEGACY_EXACT_ENCODE=${LEGACY_EXACT_ENCODE:-false}
+DETERMINISTIC_PREWARM=${DETERMINISTIC_PREWARM:-true}
 HISTORY_TRANSPORT_DTYPE=${HISTORY_TRANSPORT_DTYPE:-float32}
 JAX_CACHE_DIR=${JAX_CACHE_DIR:-$ROOT/eval_out/.jax_compilation_cache_550}
+SERVER_XLA_FLAGS=${SERVER_XLA_FLAGS-${XLA_FLAGS:-}}
 
 SERVER_PY=${SERVER_PY:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/miniconda3/envs/robomme-vla/bin/python}
 EVAL_PY=${EVAL_PY:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/miniconda3/envs/robomme/bin/python}
 SERVER_SITE_PACKAGES=${SERVER_SITE_PACKAGES:-$("$SERVER_PY" -c 'import site; print(site.getsitepackages()[0])')}
 OPENPI_DATA_HOME=${OPENPI_DATA_HOME:-/inspire/qb-ilm/project/semantic-visual-tokenizer/public/dzj/robomme_ckpt/openpi_assets}
 
-NVIDIA_DRIVER_VERSION=${NVIDIA_DRIVER_VERSION:-$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -n1)}
+NVIDIA_DRIVER_VERSION=${NVIDIA_DRIVER_VERSION:-$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | sed -n '1p')}
 NVIDIA_DRIVER_ROOT=${NVIDIA_DRIVER_ROOT:-/inspire/qb-ilm/project/semantic-visual-tokenizer/public/dzj/robomme_runtime/nvidia/$NVIDIA_DRIVER_VERSION}
 NVIDIA_RENDER_LIBS=$NVIDIA_DRIVER_ROOT/runtime-libs
 NVIDIA_VK_ICD=$NVIDIA_DRIVER_ROOT/nvidia_icd.local.json
@@ -167,8 +170,11 @@ record_timing() {
   echo "encode_max_total_frames=$ENCODE_MAX_TOTAL_FRAMES"
   echo "cpu_affinity=$CPU_AFFINITY"
   echo "lazy_history_encode=$LAZY_HISTORY_ENCODE"
+  echo "legacy_exact_encode=$LEGACY_EXACT_ENCODE"
+  echo "deterministic_prewarm=$DETERMINISTIC_PREWARM"
   echo "history_transport_dtype=$HISTORY_TRANSPORT_DTYPE"
   echo "jax_cache_dir=$JAX_CACHE_DIR"
+  echo "server_xla_flags=$SERVER_XLA_FLAGS"
   echo "policy_repo=$POLICY_REPO"
   echo "kit_root=$KIT_ROOT"
 } > "$TIMING_FILE"
@@ -187,6 +193,22 @@ if [[ "$CPU_AFFINITY" != "none" && "$CPU_AFFINITY" != "per_gpu_v1" ]]; then
 fi
 if [[ "$LAZY_HISTORY_ENCODE" != "true" && "$LAZY_HISTORY_ENCODE" != "false" ]]; then
   echo "LAZY_HISTORY_ENCODE must be true or false" >&2
+  exit 1
+fi
+if [[ "$LEGACY_EXACT_ENCODE" != "true" && "$LEGACY_EXACT_ENCODE" != "false" ]]; then
+  echo "LEGACY_EXACT_ENCODE must be true or false" >&2
+  exit 1
+fi
+if [[ "$DETERMINISTIC_PREWARM" != "true" && "$DETERMINISTIC_PREWARM" != "false" ]]; then
+  echo "DETERMINISTIC_PREWARM must be true or false" >&2
+  exit 1
+fi
+if [[ "$LEGACY_EXACT_ENCODE" == "true" && "$LAZY_HISTORY_ENCODE" == "true" ]]; then
+  echo "LEGACY_EXACT_ENCODE is incompatible with LAZY_HISTORY_ENCODE" >&2
+  exit 1
+fi
+if [[ "$LEGACY_EXACT_ENCODE" == "true" && "$ENCODE_MAX_BATCH_SIZE" != "1" ]]; then
+  echo "LEGACY_EXACT_ENCODE requires ENCODE_MAX_BATCH_SIZE=1" >&2
   exit 1
 fi
 
@@ -212,6 +234,75 @@ SERVER_LD_PATH=$(find "$SERVER_SITE_PACKAGES/nvidia" -maxdepth 2 -name lib -type
 SERVER_PYTHONPATH="$POLICY_REPO/src:$POLICY_REPO/packages/openpi-client/src"
 EVAL_PYTHONPATH="$POLICY_REPO/packages/openpi-client/src:$POLICY_REPO/examples/robomme:$POLICY_REPO/src"
 
+if [[ "$DETERMINISTIC_PREWARM" == "true" ]]; then
+  prewarm_signature=$(
+    {
+      printf '%s\n' \
+        "$NVIDIA_DRIVER_VERSION" \
+        "$CKPT" \
+        "$SEED" \
+        "$MAX_BATCH_SIZE" \
+        "$LEGACY_EXACT_ENCODE" \
+        "$SERVER_XLA_FLAGS"
+      (
+        cd "$POLICY_REPO"
+        find scripts/serve_policy.py src/mme_vla_suite src/openpi \
+          -type f -name '*.py' -print0 \
+          | LC_ALL=C sort -z \
+          | xargs -0 sha256sum
+      )
+      "$SERVER_PY" -c \
+        'import jax, jaxlib; print(jax.__version__, jaxlib.__version__)'
+    } | sha256sum | awk '{print $1}'
+  )
+  prewarm_marker="$JAX_CACHE_DIR/.robomme_prewarm_${prewarm_signature}"
+  echo "prewarm_signature=$prewarm_signature" >> "$TIMING_FILE"
+  if [[ -f "$prewarm_marker" ]]; then
+    echo "reusing deterministic JAX prewarm marker"
+    echo "prewarm_cache_hit=true" >> "$TIMING_FILE"
+  else
+    echo "prewarming JAX cache in one isolated GPU process"
+    echo "prewarm_cache_hit=false" >> "$TIMING_FILE"
+    prewarm_affinity=()
+    if [[ "$CPU_AFFINITY" == "per_gpu_v1" ]]; then
+      prewarm_affinity=(
+        numactl
+        --physcpubind="$(gpu_cpu_list 0)"
+        --membind="$(gpu_numa_node 0)"
+      )
+    fi
+    prewarm_exact_args=()
+    if [[ "$LEGACY_EXACT_ENCODE" == "true" ]]; then
+      prewarm_exact_args=(--legacy-exact-encode)
+    fi
+    (
+      cd "$POLICY_REPO"
+      "${prewarm_affinity[@]}" env \
+        CUDA_VISIBLE_DEVICES=0 \
+        LD_LIBRARY_PATH="$SERVER_LD_PATH" \
+        OPENPI_DATA_HOME="$OPENPI_DATA_HOME" \
+        PYTHONPATH="$SERVER_PYTHONPATH" \
+        XLA_PYTHON_CLIENT_PREALLOCATE=false \
+        XLA_PYTHON_CLIENT_MEM_FRACTION="$MEM_FRACTION" \
+        JAX_COMPILATION_CACHE_DIR="$JAX_CACHE_DIR" \
+        JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0 \
+        XLA_FLAGS="$SERVER_XLA_FLAGS" \
+        "$SERVER_PY" scripts/serve_policy.py \
+          --seed="$SEED" \
+          --serving-mode=stateless-batched \
+          --prewarm-only \
+          --max-batch-size="$MAX_BATCH_SIZE" \
+          --encode-max-total-frames="$ENCODE_MAX_TOTAL_FRAMES" \
+          "${prewarm_exact_args[@]}" \
+          policy:checkpoint \
+          --policy.config=mme_vla_suite \
+          --policy.dir="$CKPT"
+    ) > "$OUT/logs/prewarm.log" 2>&1
+    : > "$prewarm_marker"
+    echo "prewarm complete"
+  fi
+fi
+
 echo "starting $NUM_GPUS stateless batched policy servers"
 for gpu in $(seq 0 $((NUM_GPUS - 1))); do
   port=$((BASE_PORT + gpu))
@@ -225,6 +316,10 @@ for gpu in $(seq 0 $((NUM_GPUS - 1))); do
         --membind="$(gpu_numa_node "$gpu")"
       )
     fi
+    exact_encode_args=()
+    if [[ "$LEGACY_EXACT_ENCODE" == "true" ]]; then
+      exact_encode_args=(--legacy-exact-encode)
+    fi
     "${affinity_prefix[@]}" env \
       CUDA_VISIBLE_DEVICES="$gpu" \
       LD_LIBRARY_PATH="$SERVER_LD_PATH" \
@@ -234,6 +329,7 @@ for gpu in $(seq 0 $((NUM_GPUS - 1))); do
       XLA_PYTHON_CLIENT_MEM_FRACTION="$MEM_FRACTION" \
       JAX_COMPILATION_CACHE_DIR="$JAX_CACHE_DIR" \
       JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0 \
+      XLA_FLAGS="$SERVER_XLA_FLAGS" \
       "$SERVER_PY" scripts/serve_policy.py \
         --seed="$SEED" \
         --port="$port" \
@@ -244,6 +340,7 @@ for gpu in $(seq 0 $((NUM_GPUS - 1))); do
         --encode-max-batch-size="$ENCODE_MAX_BATCH_SIZE" \
         --encode-max-wait-ms="$ENCODE_MAX_WAIT_MS" \
         --encode-max-total-frames="$ENCODE_MAX_TOTAL_FRAMES" \
+        "${exact_encode_args[@]}" \
         policy:checkpoint \
         --policy.config=mme_vla_suite \
         --policy.dir="$CKPT"
