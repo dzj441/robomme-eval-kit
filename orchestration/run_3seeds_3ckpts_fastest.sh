@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# Evaluate three checkpoints at three model seeds with the fastest validated
+# 8-GPU stateless configuration. Runs are intentionally sequential because
+# each one occupies all eight GPUs.
+set -euo pipefail
+
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+ROOT=${ROOT:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/RoboMME}
+POLICY_REPO=${POLICY_REPO:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/.worktrees/RoboMME_policy-stateless-batched}
+TRAIN_RUN=${TRAIN_RUN:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/RoboMME_policy/runs/ckpts/mme_vla_suite/perceptual-framesamp-modul_8h100_b64_seed42}
+OUT_ROOT=${OUT_ROOT:-$ROOT/eval_out/h100_b64_seed42_3ckpt_3seed_fastest}
+CHECKPOINTS=${CHECKPOINTS:-"79999 70000 60000"}
+SEEDS=${SEEDS:-"7 17 27"}
+POLICY_NAME=${POLICY_NAME:-h100-b64-seed42}
+BASE_PORT=${BASE_PORT:-8600}
+
+export ROOT POLICY_REPO POLICY_NAME
+mkdir -p "$OUT_ROOT"
+MASTER_LOG=$OUT_ROOT/master.log
+
+log() {
+  echo "[$(date -Is)] $*" | tee -a "$MASTER_LOG"
+}
+
+is_complete() {
+  local run=$1
+  [[ -f "$run/aggregate.json" && -f "$run/TIMING.txt" ]] || return 1
+  grep -q '^status=complete$' "$run/TIMING.txt" || return 1
+  python - "$run/aggregate.json" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1]))
+assert len(payload.get("per_task", {})) == 16
+assert sum(payload.get("errors", {}).values()) == 0
+PY
+}
+
+summarize() {
+  # shellcheck disable=SC2086
+  python "$SCRIPT_DIR/summarize_eval_grid.py" "$OUT_ROOT" \
+    --checkpoints $CHECKPOINTS --seeds $SEEDS \
+    > "$OUT_ROOT/SUMMARY.stdout.txt"
+  cat "$OUT_ROOT/SUMMARY.stdout.txt"
+}
+
+for checkpoint in $CHECKPOINTS; do
+  checkpoint_dir=$TRAIN_RUN/$checkpoint
+  if [[ ! -f "$checkpoint_dir/_CHECKPOINT_METADATA" ]]; then
+    log "ERROR checkpoint is missing or incomplete: $checkpoint_dir"
+    exit 1
+  fi
+done
+
+cat > "$OUT_ROOT/MANIFEST.txt" <<EOF
+created=$(date -Is)
+root=$ROOT
+policy_repo=$POLICY_REPO
+train_run=$TRAIN_RUN
+checkpoints=$CHECKPOINTS
+seeds=$SEEDS
+preset=run_8gpu_fastest.sh
+num_gpus=8
+servers=8
+env_workers=32
+max_batch_size=1
+max_wait_ms=0
+video_mode=off
+sharding=balanced_steal_v1
+EOF
+
+child_pid=
+cleanup() {
+  if [[ -n "$child_pid" ]] && kill -0 "$child_pid" 2>/dev/null; then
+    kill "$child_pid" 2>/dev/null || true
+    wait "$child_pid" 2>/dev/null || true
+  fi
+}
+trap cleanup INT TERM EXIT
+
+log "BEGIN 3 checkpoints x 3 seeds; checkpoints=[$CHECKPOINTS], seeds=[$SEEDS]"
+for checkpoint in $CHECKPOINTS; do
+  for seed in $SEEDS; do
+    run=$OUT_ROOT/ckpt$checkpoint/seed$seed
+    if is_complete "$run"; then
+      log "SKIP ckpt=$checkpoint seed=$seed (already complete)"
+      continue
+    fi
+    if [[ -e "$run" ]]; then
+      archived=${run}.incomplete.$(date -u +%Y%m%dT%H%M%SZ)
+      mv "$run" "$archived"
+      log "ARCHIVE incomplete run: $run -> $archived"
+    fi
+    mkdir -p "$(dirname "$run")"
+    log "START ckpt=$checkpoint seed=$seed out=$run"
+    started=$(date +%s)
+    env \
+      CKPT="$TRAIN_RUN/$checkpoint" \
+      CKPT_ID="$checkpoint" \
+      SEED="$seed" \
+      OUT="$run" \
+      BASE_PORT="$BASE_PORT" \
+      bash "$SCRIPT_DIR/run_8gpu_fastest.sh" \
+      >> "$MASTER_LOG" 2>&1 &
+    child_pid=$!
+    rc=0
+    wait "$child_pid" || rc=$?
+    child_pid=
+    elapsed=$(( $(date +%s) - started ))
+    if (( rc != 0 )) || ! is_complete "$run"; then
+      log "FAILED ckpt=$checkpoint seed=$seed rc=$rc elapsed=${elapsed}s; stopping grid"
+      summarize || true
+      exit 1
+    fi
+    log "DONE ckpt=$checkpoint seed=$seed elapsed=${elapsed}s"
+    summarize
+  done
+done
+
+trap - INT TERM EXIT
+summarize
+log "COMPLETE all 9 runs; summary=$OUT_ROOT/SUMMARY.md"
