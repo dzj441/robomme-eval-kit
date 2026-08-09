@@ -28,7 +28,6 @@ SHARDING=${SHARDING:-global_round_robin_v1}
 WEIGHT_PROFILE=${WEIGHT_PROFILE:-}
 VIDEO_MODE=${VIDEO_MODE:-save}
 EVAL_NUM_THREADS=${EVAL_NUM_THREADS:-1}
-EVAL_RENDER_RUNTIME=${EVAL_RENDER_RUNTIME:-bundled}
 ENCODE_MAX_BATCH_SIZE=${ENCODE_MAX_BATCH_SIZE:-1}
 ENCODE_MAX_WAIT_MS=${ENCODE_MAX_WAIT_MS:-0}
 ENCODE_MAX_TOTAL_FRAMES=${ENCODE_MAX_TOTAL_FRAMES:-128}
@@ -52,14 +51,13 @@ NVIDIA_VK_ICD=$NVIDIA_DRIVER_ROOT/nvidia_icd.local.json
 NVIDIA_EGL_VENDOR=$NVIDIA_DRIVER_ROOT/10_nvidia.local.json
 XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp/robomme-stateless-${BASE_PORT}}
 
-required_paths=("$POLICY_REPO" "$KIT_ROOT" "$CKPT")
-if [[ "$EVAL_RENDER_RUNTIME" == "bundled" ]]; then
-  required_paths+=("$NVIDIA_RENDER_LIBS" "$NVIDIA_VK_ICD" "$NVIDIA_EGL_VENDOR")
-elif [[ "$EVAL_RENDER_RUNTIME" != "system" ]]; then
-  echo "EVAL_RENDER_RUNTIME must be bundled or system" >&2
-  exit 1
-fi
-for required_path in "${required_paths[@]}"; do
+for required_path in \
+  "$POLICY_REPO" \
+  "$KIT_ROOT" \
+  "$CKPT" \
+  "$NVIDIA_RENDER_LIBS" \
+  "$NVIDIA_VK_ICD" \
+  "$NVIDIA_EGL_VENDOR"; do
   if [[ ! -e "$required_path" ]]; then
     echo "missing required path: $required_path" >&2
     exit 1
@@ -256,7 +254,6 @@ record_timing() {
   echo "weight_profile=$WEIGHT_PROFILE"
   echo "video_mode=$VIDEO_MODE"
   echo "eval_num_threads=$EVAL_NUM_THREADS"
-  echo "eval_render_runtime=$EVAL_RENDER_RUNTIME"
   echo "encode_max_batch_size=$ENCODE_MAX_BATCH_SIZE"
   echo "encode_max_wait_ms=$ENCODE_MAX_WAIT_MS"
   echo "encode_max_total_frames=$ENCODE_MAX_TOTAL_FRAMES"
@@ -352,16 +349,6 @@ fi
 SERVER_LD_PATH=$(find "$SERVER_SITE_PACKAGES/nvidia" -maxdepth 2 -name lib -type d 2>/dev/null | tr '\n' ':')
 SERVER_PYTHONPATH="$POLICY_REPO/src:$POLICY_REPO/packages/openpi-client/src"
 EVAL_PYTHONPATH="$POLICY_REPO/packages/openpi-client/src:$POLICY_REPO/examples/robomme:$POLICY_REPO/src"
-EVAL_RENDER_ENV=()
-if [[ "$EVAL_RENDER_RUNTIME" == "bundled" ]]; then
-  EVAL_RENDER_ENV=(
-    LD_LIBRARY_PATH="$NVIDIA_RENDER_LIBS"
-    VK_ICD_FILENAMES="$NVIDIA_VK_ICD"
-    __EGL_VENDOR_LIBRARY_FILENAMES="$NVIDIA_EGL_VENDOR"
-    __GLX_VENDOR_LIBRARY_NAME=nvidia
-    EGL_PLATFORM=surfaceless
-  )
-fi
 
 if [[ "$DETERMINISTIC_PREWARM" == "true" ]]; then
   prewarm_signature=$(
@@ -547,7 +534,11 @@ for shard in $(seq 0 $((NUM_SHARDS - 1))); do
       lazy_encode_args=(--args.lazy-history-encode)
     fi
     exec setsid "${affinity_prefix[@]}" env \
-      "${EVAL_RENDER_ENV[@]}" \
+      LD_LIBRARY_PATH="$NVIDIA_RENDER_LIBS" \
+      VK_ICD_FILENAMES="$NVIDIA_VK_ICD" \
+      __EGL_VENDOR_LIBRARY_FILENAMES="$NVIDIA_EGL_VENDOR" \
+      __GLX_VENDOR_LIBRARY_NAME=nvidia \
+      EGL_PLATFORM=surfaceless \
       XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
       CUDA_VISIBLE_DEVICES="$gpu" \
       OMP_NUM_THREADS="$EVAL_NUM_THREADS" \
