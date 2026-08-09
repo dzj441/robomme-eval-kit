@@ -79,9 +79,33 @@ TIMING_FILE=${TIMING_FILE:-$OUT/TIMING.txt}
 INITIAL_COMPLETED=$(find "$OUT" -type f -name '*.mp4' | wc -l)
 START_EPOCH=$(date +%s)
 START_TIME=$(date -Is)
+EXPECTED_MODEL_FINGERPRINT=$("$EVAL_PY" - "$CKPT" "$SEED" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+
+checkpoint_dir = Path(sys.argv[1]).resolve()
+seed = int(sys.argv[2])
+history_path = checkpoint_dir.parent / "history_config.txt"
+history_config = history_path.read_text() if history_path.exists() else ""
+payload = "\n".join(
+    [
+        "robomme-stateless-protocol-v2",
+        "mme_vla_suite",
+        str(checkpoint_dir),
+        history_config,
+        str(seed),
+    ]
+)
+print(hashlib.sha256(payload.encode()).hexdigest())
+PY
+)
 
 SERVER_PIDS=()
+SERVER_PGIDS=()
 EVAL_PIDS=()
+EVAL_PGIDS=()
+CLEANUP_DONE=0
 
 completed_count() {
   if [[ -f "$OUT/ownership.json" ]]; then
@@ -106,23 +130,84 @@ gpu_numa_node() {
   if (( gpu < 4 )); then echo 0; else echo 1; fi
 }
 
-cleanup() {
-  trap - EXIT INT TERM
-  for pid in "${EVAL_PIDS[@]}"; do
-    if kill -0 "$pid" 2>/dev/null; then
-      kill "$pid" 2>/dev/null || true
+process_group_has_live_members() {
+  local pgid=$1
+  ps -eo pgid=,stat= | awk -v target="$pgid" '
+    $1 == target && $2 !~ /^Z/ { found = 1 }
+    END { exit(found ? 0 : 1) }
+  '
+}
+
+terminate_process_groups() {
+  local label=$1
+  shift
+  local -a pgids=("$@")
+  local pgid deadline any_alive
+  if (( ${#pgids[@]} == 0 )); then
+    return
+  fi
+
+  for pgid in "${pgids[@]}"; do
+    if process_group_has_live_members "$pgid"; then
+      echo "stopping $label process group $pgid"
+      kill -TERM -- "-$pgid" 2>/dev/null || true
     fi
   done
-  for pid in "${SERVER_PIDS[@]}"; do
-    if kill -0 "$pid" 2>/dev/null; then
-      kill "$pid" 2>/dev/null || true
+
+  deadline=$((SECONDS + 15))
+  while (( SECONDS < deadline )); do
+    any_alive=0
+    for pgid in "${pgids[@]}"; do
+      if process_group_has_live_members "$pgid"; then
+        any_alive=1
+        break
+      fi
+    done
+    if (( any_alive == 0 )); then
+      return
+    fi
+    sleep 0.2
+  done
+
+  for pgid in "${pgids[@]}"; do
+    if process_group_has_live_members "$pgid"; then
+      echo "force-stopping $label process group $pgid" >&2
+      kill -KILL -- "-$pgid" 2>/dev/null || true
     fi
   done
+}
+
+cleanup_processes() {
+  local pid
+  if (( CLEANUP_DONE == 1 )); then
+    return
+  fi
+  CLEANUP_DONE=1
+
+  # Stop clients before servers so no request is in flight during shutdown.
+  terminate_process_groups evaluator "${EVAL_PGIDS[@]}"
+  terminate_process_groups server "${SERVER_PGIDS[@]}"
   for pid in "${EVAL_PIDS[@]}" "${SERVER_PIDS[@]}"; do
     wait "$pid" 2>/dev/null || true
   done
 }
-trap cleanup EXIT INT TERM
+
+on_exit() {
+  local status=$?
+  trap - EXIT INT TERM
+  cleanup_processes
+  exit "$status"
+}
+
+on_signal() {
+  local status=$1
+  trap - EXIT INT TERM
+  cleanup_processes
+  exit "$status"
+}
+trap on_exit EXIT
+trap 'on_signal 130' INT
+trap 'on_signal 143' TERM
 
 record_timing() {
   local status=$1
@@ -154,6 +239,10 @@ record_timing() {
   echo "initial_status=running"
   echo "start_time=$START_TIME"
   echo "seed=$SEED"
+  echo "ckpt=$CKPT"
+  echo "ckpt_id=$CKPT_ID"
+  echo "base_port=$BASE_PORT"
+  echo "expected_model_fingerprint=$EXPECTED_MODEL_FINGERPRINT"
   echo "expected_episodes=$EXPECTED_EPISODES"
   echo "initial_completed_episodes=$INITIAL_COMPLETED"
   echo "num_gpus=$NUM_GPUS"
@@ -209,6 +298,33 @@ if [[ "$LEGACY_EXACT_ENCODE" == "true" && "$LAZY_HISTORY_ENCODE" == "true" ]]; t
 fi
 if [[ "$LEGACY_EXACT_ENCODE" == "true" && "$ENCODE_MAX_BATCH_SIZE" != "1" ]]; then
   echo "LEGACY_EXACT_ENCODE requires ENCODE_MAX_BATCH_SIZE=1" >&2
+  exit 1
+fi
+
+# Bind all ports at once before spending time loading checkpoints. SO_REUSEADDR
+# matches the websocket server while still rejecting a live listener.
+if ! "$EVAL_PY" - "$BASE_PORT" "$NUM_GPUS" <<'PY'
+import socket
+import sys
+
+base_port = int(sys.argv[1])
+num_ports = int(sys.argv[2])
+sockets = []
+try:
+    for port in range(base_port, base_port + num_ports):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("0.0.0.0", port))
+        sockets.append(sock)
+except OSError as exc:
+    print(f"required server port {port} is unavailable: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+finally:
+    for sock in sockets:
+        sock.close()
+PY
+then
+  record_timing ports_busy
   exit 1
 fi
 
@@ -320,7 +436,7 @@ for gpu in $(seq 0 $((NUM_GPUS - 1))); do
     if [[ "$LEGACY_EXACT_ENCODE" == "true" ]]; then
       exact_encode_args=(--legacy-exact-encode)
     fi
-    "${affinity_prefix[@]}" env \
+    exec setsid "${affinity_prefix[@]}" env \
       CUDA_VISIBLE_DEVICES="$gpu" \
       LD_LIBRARY_PATH="$SERVER_LD_PATH" \
       OPENPI_DATA_HOME="$OPENPI_DATA_HOME" \
@@ -346,23 +462,47 @@ for gpu in $(seq 0 $((NUM_GPUS - 1))); do
         --policy.dir="$CKPT"
   ) > "$OUT/logs/server_gpu${gpu}.log" 2>&1 &
   SERVER_PIDS+=("$!")
+  SERVER_PGIDS+=("$!")
   echo "  gpu$gpu server pid=$! port=$port"
 done
 
 for gpu in $(seq 0 $((NUM_GPUS - 1))); do
   port=$((BASE_PORT + gpu))
+  pid=${SERVER_PIDS[$gpu]}
+  metadata_file="$OUT/logs/server_gpu${gpu}.metadata.json"
+  metadata_tmp="${metadata_file}.tmp"
   ready=0
   for _ in $(seq 1 180); do
-    if "$EVAL_PY" -c "import socket; s=socket.create_connection(('127.0.0.1',$port),2); s.close()" 2>/dev/null; then
+    if ! kill -0 "$pid" 2>/dev/null; then
+      break
+    fi
+    if PYTHONPATH="$POLICY_REPO/packages/openpi-client/src" \
+      "$EVAL_PY" "$KIT_ROOT/orchestration/verify_stateless_server.py" \
+        --port "$port" \
+        --fingerprint "$EXPECTED_MODEL_FINGERPRINT" \
+        --timeout 2 \
+        > "$metadata_tmp" 2>/dev/null; then
+      mv "$metadata_tmp" "$metadata_file"
       ready=1
       break
     fi
     sleep 2
   done
+  rm -f "$metadata_tmp"
   if (( ready == 0 )); then
-    echo "server gpu$gpu on port $port failed to become ready" >&2
+    if kill -0 "$pid" 2>/dev/null; then
+      echo "server gpu$gpu pid=$pid on port $port failed identity/readiness verification" >&2
+    else
+      echo "server gpu$gpu pid=$pid exited before becoming ready on port $port" >&2
+    fi
     tail -n 80 "$OUT/logs/server_gpu${gpu}.log" >&2 || true
     record_timing server_start_failed
+    exit 1
+  fi
+  actual_pgid=$(ps -o pgid= -p "$pid" | tr -d '[:space:]')
+  if [[ "$actual_pgid" != "$pid" ]]; then
+    echo "server gpu$gpu is not in its tracked process group: pid=$pid pgid=$actual_pgid" >&2
+    record_timing server_process_group_failed
     exit 1
   fi
 done
@@ -393,7 +533,7 @@ for shard in $(seq 0 $((NUM_SHARDS - 1))); do
     if [[ "$LAZY_HISTORY_ENCODE" == "true" ]]; then
       lazy_encode_args=(--args.lazy-history-encode)
     fi
-    "${affinity_prefix[@]}" env \
+    exec setsid "${affinity_prefix[@]}" env \
       LD_LIBRARY_PATH="$NVIDIA_RENDER_LIBS" \
       VK_ICD_FILENAMES="$NVIDIA_VK_ICD" \
       __EGL_VENDOR_LIBRARY_FILENAMES="$NVIDIA_EGL_VENDOR" \
@@ -422,6 +562,7 @@ for shard in $(seq 0 $((NUM_SHARDS - 1))); do
         --args.save-dir="$shard_dir"
   ) > "$OUT/logs/eval_shard${shard}.log" 2>&1 &
   EVAL_PIDS+=("$!")
+  EVAL_PGIDS+=("$!")
   echo "  shard$shard pid=$! -> gpu$gpu port$port"
 done
 
@@ -432,9 +573,32 @@ for index in "${!EVAL_PIDS[@]}"; do
     FAIL=1
   fi
 done
-EVAL_PIDS=()
 
-cleanup
+# A completed episode count isn't sufficient: verify that the exact servers
+# launched for this run stayed alive and never failed to bind.
+for gpu in $(seq 0 $((NUM_GPUS - 1))); do
+  pid=${SERVER_PIDS[$gpu]}
+  port=$((BASE_PORT + gpu))
+  server_log="$OUT/logs/server_gpu${gpu}.log"
+  if ! kill -0 "$pid" 2>/dev/null; then
+    echo "server gpu$gpu pid=$pid exited during evaluation" >&2
+    FAIL=1
+  elif ! PYTHONPATH="$POLICY_REPO/packages/openpi-client/src" \
+    "$EVAL_PY" "$KIT_ROOT/orchestration/verify_stateless_server.py" \
+      --port "$port" \
+      --fingerprint "$EXPECTED_MODEL_FINGERPRINT" \
+      --timeout 2 \
+      >/dev/null; then
+    echo "server gpu$gpu failed final identity verification" >&2
+    FAIL=1
+  fi
+  if grep -Eq 'Traceback|address already in use|OSError: \[Errno 98\]' "$server_log"; then
+    echo "server gpu$gpu log contains a fatal startup/runtime error" >&2
+    FAIL=1
+  fi
+done
+
+cleanup_processes
 trap - EXIT INT TERM
 
 "$EVAL_PY" "$KIT_ROOT/orchestration/merge_robomme.py" "$OUT" \
