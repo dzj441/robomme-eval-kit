@@ -13,8 +13,9 @@ CHECKPOINTS=${CHECKPOINTS:-"79999 70000 60000"}
 SEEDS=${SEEDS:-"7 17 27"}
 POLICY_NAME=${POLICY_NAME:-h100-b64-seed42}
 BASE_PORT=${BASE_PORT:-8600}
+EVAL_RENDER_RUNTIME=${EVAL_RENDER_RUNTIME:-system}
 
-export ROOT POLICY_REPO POLICY_NAME
+export ROOT POLICY_REPO POLICY_NAME EVAL_RENDER_RUNTIME
 mkdir -p "$OUT_ROOT"
 MASTER_LOG=$OUT_ROOT/master.log
 
@@ -70,7 +71,7 @@ is_complete() {
       return 1
     fi
   done
-  python - "$run" "$expected_checkpoint" "$expected_seed" <<'PY'
+  python - "$run" "$expected_checkpoint" "$expected_seed" "$EVAL_RENDER_RUNTIME" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -78,6 +79,7 @@ from pathlib import Path
 run = Path(sys.argv[1])
 expected_checkpoint = sys.argv[2]
 expected_seed = sys.argv[3]
+expected_render_runtime = sys.argv[4]
 payload = json.loads((run / "aggregate.json").read_text())
 assert len(payload.get("per_task", {})) == 16
 assert sum(payload.get("errors", {}).values()) == 0
@@ -89,6 +91,7 @@ for line in (run / "TIMING.txt").read_text().splitlines():
         timing[key] = value
 assert timing.get("ckpt_id") == expected_checkpoint
 assert timing.get("seed") == expected_seed
+assert timing.get("eval_render_runtime") == expected_render_runtime
 fingerprint = timing["expected_model_fingerprint"]
 for gpu in range(8):
     metadata = json.loads(
@@ -131,6 +134,7 @@ max_batch_size=1
 max_wait_ms=0
 video_mode=off
 sharding=balanced_steal_v1
+eval_render_runtime=$EVAL_RENDER_RUNTIME
 lifecycle_guard=process_groups_ports_and_fingerprint_v1
 EOF
 
