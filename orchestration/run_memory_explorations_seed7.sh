@@ -92,7 +92,10 @@ for experiment in $EXPERIMENTS; do
 
   if [[ "$status" != complete ]]; then
     echo "FAILED $experiment rc=$rc elapsed=${elapsed}s output=$output" >&2
-    exit "${rc:-1}"
+    if (( rc == 0 )); then
+      exit 1
+    fi
+    exit "$rc"
   fi
   echo "DONE $experiment elapsed=${elapsed}s output=$output"
 done

@@ -5,9 +5,10 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset ONLY_TASKS
 
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 ROOT=${ROOT:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/RoboMME}
 POLICY_REPO=${POLICY_REPO:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/.worktrees/RoboMME_policy-stateless-batched}
-KIT_ROOT=${KIT_ROOT:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/.worktrees/robomme-eval-kit-stateless-batched}
+KIT_ROOT=${KIT_ROOT:-$(cd -- "$SCRIPT_DIR/.." && pwd)}
 
 CKPT=${CKPT:-$ROOT/ckpt/perceptual-framesamp-modul/home/daiyp/MME-VLA-Suite/runs/ckpts/mme_vla_suite/perceptual-framesamp-modul/79999}
 CKPT_ID=${CKPT_ID:-79999}
@@ -38,6 +39,7 @@ DETERMINISTIC_PREWARM=${DETERMINISTIC_PREWARM:-true}
 HISTORY_TRANSPORT_DTYPE=${HISTORY_TRANSPORT_DTYPE:-float32}
 JAX_CACHE_DIR=${JAX_CACHE_DIR:-$ROOT/eval_out/.jax_compilation_cache_550}
 SERVER_XLA_FLAGS=${SERVER_XLA_FLAGS-${XLA_FLAGS:-}}
+SERVER_READY_TIMEOUT_SECONDS=${SERVER_READY_TIMEOUT_SECONDS:-1200}
 
 SERVER_PY=${SERVER_PY:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/miniconda3/envs/robomme-vla/bin/python}
 EVAL_PY=${EVAL_PY:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/miniconda3/envs/robomme/bin/python}
@@ -144,7 +146,7 @@ terminate_process_groups() {
   local -a pgids=("$@")
   local pgid deadline any_alive
   if (( ${#pgids[@]} == 0 )); then
-    return
+    return 0
   fi
 
   for pgid in "${pgids[@]}"; do
@@ -164,7 +166,7 @@ terminate_process_groups() {
       fi
     done
     if (( any_alive == 0 )); then
-      return
+      return 0
     fi
     sleep 0.2
   done
@@ -264,6 +266,7 @@ record_timing() {
   echo "history_transport_dtype=$HISTORY_TRANSPORT_DTYPE"
   echo "jax_cache_dir=$JAX_CACHE_DIR"
   echo "server_xla_flags=$SERVER_XLA_FLAGS"
+  echo "server_ready_timeout_seconds=$SERVER_READY_TIMEOUT_SECONDS"
   echo "policy_repo=$POLICY_REPO"
   echo "kit_root=$KIT_ROOT"
 } > "$TIMING_FILE"
@@ -290,6 +293,10 @@ if [[ "$LEGACY_EXACT_ENCODE" != "true" && "$LEGACY_EXACT_ENCODE" != "false" ]]; 
 fi
 if [[ "$DETERMINISTIC_PREWARM" != "true" && "$DETERMINISTIC_PREWARM" != "false" ]]; then
   echo "DETERMINISTIC_PREWARM must be true or false" >&2
+  exit 1
+fi
+if [[ ! "$SERVER_READY_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "SERVER_READY_TIMEOUT_SECONDS must be a positive integer" >&2
   exit 1
 fi
 if [[ "$LEGACY_EXACT_ENCODE" == "true" && "$LAZY_HISTORY_ENCODE" == "true" ]]; then
@@ -472,7 +479,8 @@ for gpu in $(seq 0 $((NUM_GPUS - 1))); do
   metadata_file="$OUT/logs/server_gpu${gpu}.metadata.json"
   metadata_tmp="${metadata_file}.tmp"
   ready=0
-  for _ in $(seq 1 180); do
+  ready_deadline=$((SECONDS + SERVER_READY_TIMEOUT_SECONDS))
+  while (( SECONDS < ready_deadline )); do
     if ! kill -0 "$pid" 2>/dev/null; then
       break
     fi
