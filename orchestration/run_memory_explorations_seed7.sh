@@ -14,6 +14,8 @@ OUT_ROOT=${OUT_ROOT:-$ROOT/eval_out/memory_explorations_seed7}
 SEED=${SEED:-7}
 PRESET=${PRESET:-deterministic}
 STEP=${STEP:-79999}
+NUM_GPUS=${NUM_GPUS:-8}
+CLIENTS_PER_GPU=${CLIENTS_PER_GPU:-4}
 
 EXPERIMENTS=${EXPERIMENTS:-"perceptual-anchor-recent-modul_8h100_b64_fastio_seed42 perceptual-temporal-state-modul_8h100_b64_fastio_seed42"}
 
@@ -32,6 +34,10 @@ esac
 
 if [[ ! -d "$POLICY_REPO/.git" && ! -f "$POLICY_REPO/.git" ]]; then
   echo "Policy worktree is missing: $POLICY_REPO" >&2
+  exit 2
+fi
+if [[ ! "$NUM_GPUS" =~ ^[1-9][0-9]*$ || ! "$CLIENTS_PER_GPU" =~ ^[1-9][0-9]*$ ]]; then
+  echo "NUM_GPUS and CLIENTS_PER_GPU must be positive integers" >&2
   exit 2
 fi
 
@@ -76,7 +82,8 @@ for experiment in $EXPERIMENTS; do
   CKPT_ID="$STEP" \
   OUT="$output" \
   SEED="$SEED" \
-  NUM_GPUS=8 \
+  NUM_GPUS="$NUM_GPUS" \
+  CLIENTS_PER_GPU="$CLIENTS_PER_GPU" \
     bash "$RUNNER"
   rc=$?
   set -e
