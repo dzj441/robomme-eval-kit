@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Evaluate the two failure-driven memory experiments sequentially on seed 7.
+# Evaluate the retained Temporal/State memory experiment on seed 7.
 #
 # Defaults to deterministic parity.  Use PRESET=fastest for the lower-latency
 # validated configuration.  A completed run is skipped so the script is safe to
@@ -10,14 +10,14 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 ROOT=${ROOT:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/RoboMME}
 POLICY_REPO=${POLICY_REPO:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/.worktrees/RoboMME_policy-memory-experiments}
 TRAIN_ROOT=${TRAIN_ROOT:-/inspire/qb-ilm/project/semantic-visual-tokenizer/public/dzj/robomme_training/training_runs/ckpts/mme_vla_suite}
-OUT_ROOT=${OUT_ROOT:-$ROOT/eval_out/memory_explorations_seed7}
+OUT_ROOT=${OUT_ROOT:-$ROOT/eval_out/temporal_state_memory_seed7}
 SEED=${SEED:-7}
 PRESET=${PRESET:-deterministic}
 STEP=${STEP:-79999}
 NUM_GPUS=${NUM_GPUS:-8}
 CLIENTS_PER_GPU=${CLIENTS_PER_GPU:-4}
 
-EXPERIMENTS=${EXPERIMENTS:-"perceptual-anchor-recent-modul_8h100_b64_fastio_seed42 perceptual-temporal-state-modul_8h100_b64_fastio_seed42"}
+EXPERIMENTS=${EXPERIMENTS:-"perceptual-temporal-state-modul_8h100_b64_fastio_seed42"}
 
 case "$PRESET" in
   deterministic)
@@ -107,4 +107,4 @@ for experiment in $EXPERIMENTS; do
   echo "DONE $experiment elapsed=${elapsed}s output=$output"
 done
 
-echo "All requested memory experiments are complete. Summary: $SUMMARY"
+echo "All requested Temporal/State evaluations are complete. Summary: $SUMMARY"
