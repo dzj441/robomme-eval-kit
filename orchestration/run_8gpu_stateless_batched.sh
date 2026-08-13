@@ -5,9 +5,10 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset ONLY_TASKS
 
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 ROOT=${ROOT:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/RoboMME}
 POLICY_REPO=${POLICY_REPO:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/.worktrees/RoboMME_policy-stateless-batched}
-KIT_ROOT=${KIT_ROOT:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/.worktrees/robomme-eval-kit-stateless-batched}
+KIT_ROOT=${KIT_ROOT:-$(cd -- "$SCRIPT_DIR/.." && pwd)}
 
 CKPT=${CKPT:-$ROOT/ckpt/perceptual-framesamp-modul/home/daiyp/MME-VLA-Suite/runs/ckpts/mme_vla_suite/perceptual-framesamp-modul/79999}
 CKPT_ID=${CKPT_ID:-79999}
