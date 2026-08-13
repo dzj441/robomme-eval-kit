@@ -25,6 +25,40 @@ git clone --branch experiment/temporal-state-memory-eval \
 - 若宿主 CUDA 覆盖 pip CUDA 库，优先把当前 Python 环境下
   `site-packages/nvidia/*/lib` 放入 `LD_LIBRARY_PATH`。
 
+## ModelScope 数据、cache 与 checkpoint
+
+训练分支包含连续 frame-history cache、共享内存 batch IPC、80k 训练入口和
+Temporal/State 新参数树，已经明显超出原仓库的 launcher 修改。旧的 343 GiB
+迁移包只有原始 `data/features`、π0.5 base 和 norm stats；新机器还必须恢复
+`accelerated_training/`。
+
+公开 ModelScope 仓库：
+`dzjjzd/robomme-minimal-train-bundle`。新增部分约 73 GiB，包括：
+
+- 48 GiB `frame_sampling_history_v1`（50 GB 主 memmap 以 12 个 transport
+  parts 上传，安装时无损重建）；
+- `big_vision/paligemma_tokenizer.model` 与 `pi05_vision_encoder/siglip_params.pkl`；
+- FastIO baseline 与 Temporal/State 的最终 step-79999 checkpoint；
+- 独立 `SHA256SUMS`。
+
+失败的约 932 GiB current-image SigLIP cache、Anchor/Recent、训练日志和中间
+checkpoint 不在迁移包里。新集群使用 policy 训练分支自带的一键脚本：
+
+```bash
+cd /path/to/RoboMME_policy_train
+
+# 脚本内部会显式 unset http_proxy/https_proxy/all_proxy（含大写变量）。
+INSTALL_ROOT=/data/robomme_training \
+POLICY_REPO="$PWD" \
+bash scripts/setup_new_cluster_from_modelscope.sh
+```
+
+已有旧 bundle/解压数据时，用
+`MODE=accelerated-only EXTRACT_DATA=0` 只补新增目录。详细变量、校验、重建和
+软链接规则见 policy 仓库
+`docs/temporal_state_memory.zh-CN.md`；不要手工把 50 GB transport parts 目录
+直接传给训练器。
+
 ## 最小评测启动
 
 ```bash
