@@ -33,7 +33,7 @@ Temporal/State 新参数树，已经明显超出原仓库的 launcher 修改。�
 `accelerated_training/`。
 
 公开 ModelScope 仓库：
-`dzjjzd/robomme-minimal-train-bundle`。新增部分约 73 GiB，包括：
+`dzjjzd/robomme-minimal-train-bundle`。新增部分约 70 GiB，包括：
 
 - 48 GiB `frame_sampling_history_v1`（50 GB 主 memmap 以 12 个 transport
   parts 上传，安装时无损重建）；
