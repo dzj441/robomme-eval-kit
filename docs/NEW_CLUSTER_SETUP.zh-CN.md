@@ -53,6 +53,11 @@ POLICY_REPO="$PWD" \
 bash scripts/setup_new_cluster_from_modelscope.sh
 ```
 
+`modelscope==1.39.0` 已记录在 eval-kit 的 `env/robomme.lock.txt`。若 simulator
+环境没有加入 `PATH`，给脚本传
+`MODELSCOPE_BIN=/path/to/robomme/bin/modelscope` 即可，不需要把 ModelScope
+安装进 JAX 训练环境。
+
 已有旧 bundle/解压数据时，用
 `MODE=accelerated-only EXTRACT_DATA=0` 只补新增目录。详细变量、校验、重建和
 软链接规则见 policy 仓库
