@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Evaluate the compact-cache 8xH100 training run on a driver-550 GPU node:
+# Evaluate the compact-cache 8xH100 training run on a driver-570 GPU node:
 #   1. seeds 7/17/27 for checkpoints 60k/70k/79999;
 #   2. seed 7 for checkpoints 10k..50k, reusing the three seed-7 runs above;
 #   3. generate the complete seed-7 SR-vs-step curve.
@@ -12,8 +12,8 @@ TRAIN_RUN=${TRAIN_RUN:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/proje
 GRID_OUT=${GRID_OUT:-$ROOT/eval_out/h100_b64_fastio_seed42_3ckpt_3seed_fastest}
 CURVE_OUT=${CURVE_OUT:-$ROOT/eval_out/h100_b64_fastio_seed42_seed7_curve_fastest}
 POLICY_NAME=${POLICY_NAME:-h100-b64-fastio-seed42}
-readonly EXPECTED_DRIVER=550.163.01
-readonly NVIDIA_DRIVER_ROOT=/inspire/qb-ilm/project/semantic-visual-tokenizer/public/dzj/robomme_runtime/nvidia/550.163.01
+readonly EXPECTED_DRIVER=570.124.06
+readonly NVIDIA_DRIVER_ROOT=/inspire/qb-ilm/project/semantic-visual-tokenizer/public/dzj/robomme_runtime/nvidia/570.124.06
 BASE_PORT=${BASE_PORT:-8600}
 EVAL_PY=${EVAL_PY:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/miniconda3/envs/robomme/bin/python}
 NUM_GPUS=${NUM_GPUS:-8}
@@ -26,7 +26,7 @@ EARLY_CHECKPOINTS="10000 20000 30000 40000 50000"
 ALL_CHECKPOINTS="10000 20000 30000 40000 50000 60000 70000 79999"
 
 host_tag=$(hostname -s | tr -cs '[:alnum:]_.-' '_')
-JAX_CACHE_DIR=${JAX_CACHE_DIR:-$ROOT/eval_out/.jax_compilation_cache_550_fastio_${host_tag}}
+JAX_CACHE_DIR=${JAX_CACHE_DIR:-$ROOT/eval_out/.jax_compilation_cache_570_fastio_${host_tag}}
 
 log() {
   echo "[$(date -Is)] $*"
@@ -83,7 +83,7 @@ for checkpoint in $ALL_CHECKPOINTS; do
 done
 
 mkdir -p "$GRID_OUT" "$CURVE_OUT" "$JAX_CACHE_DIR"
-cat > "$ROOT/eval_out/h100_b64_fastio_seed42_full_eval_550.MANIFEST.txt" <<EOF
+cat > "$ROOT/eval_out/h100_b64_fastio_seed42_full_eval_570.MANIFEST.txt" <<EOF
 created=$(date -Is)
 host=$(hostname)
 driver=$EXPECTED_DRIVER

@@ -2,7 +2,9 @@
 
 本分支提供 MME-VLA 无状态推理的多 GPU 编排、episode 级负载均衡、结果合并和性能记录。配套 policy 实现在 [dzj441/robomme_policy_learning 的 `codex/stateless-batched-eval` 分支](https://github.com/dzj441/robomme_policy_learning/tree/codex/stateless-batched-eval)。
 
-> 当前 Git 分支 `codex/stateless-batched-eval-550` 是驱动 **550.163.01** 专用版本。4 卡入口 `orchestration/run_4gpu_fastest_550.sh` 将驱动版本、用户态渲染 runtime、4 个 GPU、每卡 4 个 env 全部固定，并会在启动前拒绝不匹配的内核驱动。驱动 **570.124.06** 请使用独立分支 `codex/stateless-batched-eval-570` 及其 `run_4gpu_fastest_570.sh`；两个入口不做自动选择。
+> 当前 Git 分支 `codex/stateless-batched-eval-570` 是驱动 **570.124.06** 专用版本。4 卡入口 `orchestration/run_4gpu_fastest_570.sh` 将驱动版本、用户态渲染 runtime、4 个 GPU、每卡 4 个 env 全部固定，并会在启动前拒绝不匹配的内核驱动。驱动 **550.163.01** 请使用独立分支 `codex/stateless-batched-eval-550` 及其 `run_4gpu_fastest_550.sh`；两个入口不做自动选择。
+
+570 用户态渲染栈位于 `/inspire/qb-ilm/project/semantic-visual-tokenizer/public/dzj/robomme_runtime/nvidia/570.124.06`，来自 NVIDIA 官方 `nvidia_driver-linux-x86_64-570.124.06-archive.tar.xz`（SHA256 `0fcaa9b47c124cca981df5155e2826615de3f28e31a27e139af8901e92d38b34`）。Vulkan/EGL manifest 使用 `libGLX_nvidia.so.0` 和 `libEGL_nvidia.so.0` SONAME，由 `runtime-libs` 解析到对应版本；不要改回 archive 文件的绝对路径，否则系统 NVIDIA layer 与 SAPIEN 可能重复加载同一驱动并在设备枚举时段错误。
 
 当前提供两个经过完整 800 episodes 验证的入口：
 
@@ -223,24 +225,26 @@ strict preset 默认使用独立的 `.jax_compilation_cache_autotune0`，避免�
 
 ## 快速运行
 
-### 4 卡、驱动 550.163.01（本分支）
+### 4 卡、驱动 570.124.06（本分支）
 
 ```bash
 CKPT=/path/to/checkpoint/79999 \
 SEED=7 \
 OUT=/path/to/eval_out/seed7 \
 VIDEO_MODE=off \
-bash orchestration/run_4gpu_fastest_550.sh
+bash orchestration/run_4gpu_fastest_570.sh
 ```
 
 该入口固定使用 4 个 policy server（每卡 1 个）和 16 个 env worker（每卡 4 个）。如需保存视频，将 `VIDEO_MODE=save`。
+
+在 4×RTX 4090、内核驱动 570.124.06 上的端到端 smoke test 使用官方 checkpoint 79999、16 tasks × 1 episode、`VIDEO_MODE=save`：16/16 episodes 完成、16 个 MP4、0 errors，首次包含 JAX 预热共 180 秒。该测试只验证 4 卡 server/env/渲染/视频链路，不把 1 episode/task 的 SR 当作精度结论。
 
 建议将两个分支并排 clone：
 
 ```bash
 git clone --branch codex/stateless-batched-eval \
   https://github.com/dzj441/robomme_policy_learning.git
-git clone --branch codex/stateless-batched-eval-550 \
+git clone --branch codex/stateless-batched-eval-570 \
   https://github.com/dzj441/robomme-eval-kit.git
 ```
 
@@ -257,8 +261,8 @@ SERVER_PY=/path/to/robomme-vla-env/bin/python \
 EVAL_PY=/path/to/robomme-env/bin/python \
 SERVER_SITE_PACKAGES=/path/to/robomme-vla-env/lib/python3.11/site-packages \
 OPENPI_DATA_HOME=/path/to/openpi-assets \
-NVIDIA_DRIVER_VERSION=550.163.01 \
-NVIDIA_DRIVER_ROOT=/path/to/headless-nvidia-runtime/550.163.01 \
+NVIDIA_DRIVER_VERSION=570.124.06 \
+NVIDIA_DRIVER_ROOT=/path/to/headless-nvidia-runtime/570.124.06 \
 SEED=7 \
 OUT=/path/to/eval_out/8gpu_deterministic_seed7 \
 bash orchestration/run_8gpu_deterministic_parity.sh

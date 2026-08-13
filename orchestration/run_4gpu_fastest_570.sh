@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Four-GPU stateless evaluation entry for nodes whose kernel driver is exactly
-# 550.163.01.  The rendering ABI is intentionally fixed in this branch.
+# 570.124.06.  The rendering ABI is intentionally fixed in this branch.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
-readonly EXPECTED_DRIVER=550.163.01
-readonly FIXED_DRIVER_ROOT=/inspire/qb-ilm/project/semantic-visual-tokenizer/public/dzj/robomme_runtime/nvidia/550.163.01
+readonly EXPECTED_DRIVER=570.124.06
+readonly FIXED_DRIVER_ROOT=/inspire/qb-ilm/project/semantic-visual-tokenizer/public/dzj/robomme_runtime/nvidia/570.124.06
 
 mapfile -t driver_versions < <(
   nvidia-smi --query-gpu=driver_version --format=csv,noheader | sort -u
@@ -24,6 +24,8 @@ fi
 
 for required_path in \
   "$FIXED_DRIVER_ROOT/runtime-libs" \
+  "$FIXED_DRIVER_ROOT/runtime-libs/libGLX_nvidia.so.0" \
+  "$FIXED_DRIVER_ROOT/runtime-libs/libEGL_nvidia.so.0" \
   "$FIXED_DRIVER_ROOT/nvidia_icd.local.json" \
   "$FIXED_DRIVER_ROOT/10_nvidia.local.json"; do
   if [[ ! -e "$required_path" ]]; then
@@ -40,6 +42,6 @@ export CLIENTS_PER_GPU=4
 export CPU_AFFINITY=none
 
 # Cache contents are specific to this driver/GPU execution environment.
-export JAX_CACHE_DIR=${JAX_CACHE_DIR:-${ROOT:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/RoboMME}/eval_out/.jax_compilation_cache_550_4gpu}
+export JAX_CACHE_DIR=${JAX_CACHE_DIR:-${ROOT:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/RoboMME}/eval_out/.jax_compilation_cache_570_4gpu}
 
 exec bash "$SCRIPT_DIR/run_8gpu_fastest.sh" "$@"

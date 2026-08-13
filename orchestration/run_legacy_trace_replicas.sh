@@ -15,7 +15,7 @@ BASE_PORT=${BASE_PORT:-8800}
 SEED=${SEED:-7}
 MEM_FRACTION=${MEM_FRACTION:-0.95}
 OUT=${OUT:-$ROOT/eval_out/diagnostics/legacy_trace_${TASK}_ep${EPISODE_ID}}
-JAX_CACHE_DIR=${JAX_CACHE_DIR:-$ROOT/eval_out/.jax_compilation_cache_550}
+JAX_CACHE_DIR=${JAX_CACHE_DIR:-$ROOT/eval_out/.jax_compilation_cache_570}
 JAX_CACHE_MODE=${JAX_CACHE_MODE:-shared}
 SERVER_XLA_FLAGS=${SERVER_XLA_FLAGS-${XLA_FLAGS:-}}
 

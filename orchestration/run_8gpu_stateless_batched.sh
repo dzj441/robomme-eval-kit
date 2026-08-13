@@ -5,15 +5,16 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset ONLY_TASKS
 
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 ROOT=${ROOT:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/RoboMME}
 POLICY_REPO=${POLICY_REPO:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/.worktrees/RoboMME_policy-stateless-batched}
-KIT_ROOT=${KIT_ROOT:-/inspire/hdd/global_user/lutianyi-253108120107/tylu/projects/dzj/.worktrees/robomme-eval-kit-stateless-batched}
+KIT_ROOT=${KIT_ROOT:-$(cd -- "$SCRIPT_DIR/.." && pwd)}
 
 CKPT=${CKPT:-$ROOT/ckpt/perceptual-framesamp-modul/home/daiyp/MME-VLA-Suite/runs/ckpts/mme_vla_suite/perceptual-framesamp-modul/79999}
 CKPT_ID=${CKPT_ID:-79999}
 POLICY_NAME=${POLICY_NAME:-framesamp-modul}
 SEED=${SEED:-7}
-OUT=${OUT:-$ROOT/eval_out/8gpu_16shards_seed${SEED}_550_stateless_batched}
+OUT=${OUT:-$ROOT/eval_out/8gpu_16shards_seed${SEED}_570_stateless_batched}
 EPISODES=${EPISODES:-50}
 
 NUM_GPUS=${NUM_GPUS:-8}
@@ -36,7 +37,7 @@ LAZY_HISTORY_ENCODE=${LAZY_HISTORY_ENCODE:-false}
 LEGACY_EXACT_ENCODE=${LEGACY_EXACT_ENCODE:-false}
 DETERMINISTIC_PREWARM=${DETERMINISTIC_PREWARM:-true}
 HISTORY_TRANSPORT_DTYPE=${HISTORY_TRANSPORT_DTYPE:-float32}
-JAX_CACHE_DIR=${JAX_CACHE_DIR:-$ROOT/eval_out/.jax_compilation_cache_550}
+JAX_CACHE_DIR=${JAX_CACHE_DIR:-$ROOT/eval_out/.jax_compilation_cache_570}
 SERVER_XLA_FLAGS=${SERVER_XLA_FLAGS-${XLA_FLAGS:-}}
 SERVER_READY_TIMEOUT_SECONDS=${SERVER_READY_TIMEOUT_SECONDS:-1200}
 
