@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Evaluate three checkpoints at three model seeds with the fastest validated
-# 8-GPU stateless configuration. Runs are intentionally sequential because
-# each one occupies all eight GPUs.
+# stateless configuration. Runs are intentionally sequential because each one
+# occupies all requested GPUs.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -13,8 +13,18 @@ CHECKPOINTS=${CHECKPOINTS:-"79999 70000 60000"}
 SEEDS=${SEEDS:-"7 17 27"}
 POLICY_NAME=${POLICY_NAME:-h100-b64-seed42}
 BASE_PORT=${BASE_PORT:-8600}
+NUM_GPUS=${NUM_GPUS:-8}
+CLIENTS_PER_GPU=${CLIENTS_PER_GPU:-4}
+CPU_AFFINITY=${CPU_AFFINITY:-per_gpu_v1}
+JAX_CACHE_DIR=${JAX_CACHE_DIR:-$ROOT/eval_out/.jax_compilation_cache_550}
+SERVER_READY_TIMEOUT_SECONDS=${SERVER_READY_TIMEOUT_SECONDS:-1200}
 
-export ROOT POLICY_REPO POLICY_NAME
+export ROOT POLICY_REPO POLICY_NAME NUM_GPUS CLIENTS_PER_GPU CPU_AFFINITY
+export JAX_CACHE_DIR SERVER_READY_TIMEOUT_SECONDS
+if [[ ! "$NUM_GPUS" =~ ^[1-9][0-9]*$ || ! "$CLIENTS_PER_GPU" =~ ^[1-9][0-9]*$ ]]; then
+  echo "NUM_GPUS and CLIENTS_PER_GPU must be positive integers" >&2
+  exit 1
+fi
 mkdir -p "$OUT_ROOT"
 MASTER_LOG=$OUT_ROOT/master.log
 
@@ -23,7 +33,7 @@ log() {
 }
 
 ports_are_free() {
-  python - "$BASE_PORT" 8 <<'PY'
+  python - "$BASE_PORT" "$NUM_GPUS" <<'PY'
 import socket
 import sys
 
@@ -61,7 +71,7 @@ is_complete() {
   local expected_seed=$3
   [[ -f "$run/aggregate.json" && -f "$run/TIMING.txt" ]] || return 1
   grep -q '^status=complete$' "$run/TIMING.txt" || return 1
-  for gpu in $(seq 0 7); do
+  for gpu in $(seq 0 $((NUM_GPUS - 1))); do
     [[ -f "$run/logs/server_gpu${gpu}.log" ]] || return 1
     [[ -f "$run/logs/server_gpu${gpu}.metadata.json" ]] || return 1
     grep -q 'server listening on' "$run/logs/server_gpu${gpu}.log" || return 1
@@ -70,7 +80,7 @@ is_complete() {
       return 1
     fi
   done
-  python - "$run" "$expected_checkpoint" "$expected_seed" <<'PY'
+  python - "$run" "$expected_checkpoint" "$expected_seed" "$NUM_GPUS" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -78,6 +88,7 @@ from pathlib import Path
 run = Path(sys.argv[1])
 expected_checkpoint = sys.argv[2]
 expected_seed = sys.argv[3]
+num_gpus = int(sys.argv[4])
 payload = json.loads((run / "aggregate.json").read_text())
 assert len(payload.get("per_task", {})) == 16
 assert sum(payload.get("errors", {}).values()) == 0
@@ -90,7 +101,7 @@ for line in (run / "TIMING.txt").read_text().splitlines():
 assert timing.get("ckpt_id") == expected_checkpoint
 assert timing.get("seed") == expected_seed
 fingerprint = timing["expected_model_fingerprint"]
-for gpu in range(8):
+for gpu in range(num_gpus):
     metadata = json.loads(
         (run / "logs" / f"server_gpu{gpu}.metadata.json").read_text()
     )
@@ -124,9 +135,12 @@ train_run=$TRAIN_RUN
 checkpoints=$CHECKPOINTS
 seeds=$SEEDS
 preset=run_8gpu_fastest.sh
-num_gpus=8
-servers=8
-env_workers=32
+num_gpus=$NUM_GPUS
+servers=$NUM_GPUS
+env_workers=$((NUM_GPUS * CLIENTS_PER_GPU))
+clients_per_gpu=$CLIENTS_PER_GPU
+cpu_affinity=$CPU_AFFINITY
+jax_cache_dir=$JAX_CACHE_DIR
 max_batch_size=1
 max_wait_ms=0
 video_mode=off
@@ -151,7 +165,7 @@ cleanup() {
 trap cleanup INT TERM EXIT
 
 if ! ports_are_free; then
-  log "ERROR required ports ${BASE_PORT}-$((BASE_PORT + 7)) are already occupied"
+  log "ERROR required ports ${BASE_PORT}-$((BASE_PORT + NUM_GPUS - 1)) are already occupied"
   exit 1
 fi
 
@@ -170,7 +184,7 @@ for checkpoint in $CHECKPOINTS; do
     fi
     mkdir -p "$(dirname "$run")"
     if ! ports_are_free; then
-      log "FAILED ports ${BASE_PORT}-$((BASE_PORT + 7)) are occupied before ckpt=$checkpoint seed=$seed"
+      log "FAILED ports ${BASE_PORT}-$((BASE_PORT + NUM_GPUS - 1)) are occupied before ckpt=$checkpoint seed=$seed"
       exit 1
     fi
     log "START ckpt=$checkpoint seed=$seed out=$run"
@@ -181,6 +195,11 @@ for checkpoint in $CHECKPOINTS; do
       SEED="$seed" \
       OUT="$run" \
       BASE_PORT="$BASE_PORT" \
+      NUM_GPUS="$NUM_GPUS" \
+      CLIENTS_PER_GPU="$CLIENTS_PER_GPU" \
+      CPU_AFFINITY="$CPU_AFFINITY" \
+      JAX_CACHE_DIR="$JAX_CACHE_DIR" \
+      SERVER_READY_TIMEOUT_SECONDS="$SERVER_READY_TIMEOUT_SECONDS" \
       bash "$SCRIPT_DIR/run_8gpu_fastest.sh" \
       >> "$MASTER_LOG" 2>&1 &
     child_pid=$!

@@ -2,6 +2,8 @@
 
 本分支提供 MME-VLA 无状态推理的多 GPU 编排、episode 级负载均衡、结果合并和性能记录。配套 policy 实现在 [dzj441/robomme_policy_learning 的 `codex/stateless-batched-eval` 分支](https://github.com/dzj441/robomme_policy_learning/tree/codex/stateless-batched-eval)。
 
+> 当前 Git 分支 `codex/stateless-batched-eval-550` 是驱动 **550.163.01** 专用版本。4 卡入口 `orchestration/run_4gpu_fastest_550.sh` 将驱动版本、用户态渲染 runtime、4 个 GPU、每卡 4 个 env 全部固定，并会在启动前拒绝不匹配的内核驱动。驱动 **570.124.06** 请使用独立分支 `codex/stateless-batched-eval-570` 及其 `run_4gpu_fastest_570.sh`；两个入口不做自动选择。
+
 当前提供两个经过完整 800 episodes 验证的入口：
 
 - **严格可复现 / legacy 数值路径**：`run_8gpu_deterministic_parity.sh`，用两个独立空 cache 完整运行分别为 **912 秒**和 **894 秒**，均为 **370/800 = 46.25%**，800 个 episode 逐项一致、0 flips。
@@ -221,12 +223,24 @@ strict preset 默认使用独立的 `.jax_compilation_cache_autotune0`，避免�
 
 ## 快速运行
 
+### 4 卡、驱动 550.163.01（本分支）
+
+```bash
+CKPT=/path/to/checkpoint/79999 \
+SEED=7 \
+OUT=/path/to/eval_out/seed7 \
+VIDEO_MODE=off \
+bash orchestration/run_4gpu_fastest_550.sh
+```
+
+该入口固定使用 4 个 policy server（每卡 1 个）和 16 个 env worker（每卡 4 个）。如需保存视频，将 `VIDEO_MODE=save`。
+
 建议将两个分支并排 clone：
 
 ```bash
 git clone --branch codex/stateless-batched-eval \
   https://github.com/dzj441/robomme_policy_learning.git
-git clone --branch codex/stateless-batched-eval \
+git clone --branch codex/stateless-batched-eval-550 \
   https://github.com/dzj441/robomme-eval-kit.git
 ```
 
