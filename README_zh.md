@@ -2,6 +2,10 @@
 
 本分支提供 MME-VLA 无状态推理的多 GPU 编排、episode 级负载均衡、结果合并和性能记录。配套 policy 实现在 [dzj441/robomme_policy_learning 的 `codex/stateless-batched-eval` 分支](https://github.com/dzj441/robomme_policy_learning/tree/codex/stateless-batched-eval)。
 
+Temporal/State 实验请使用两个仓库同名的
+`experiment/temporal-state-memory-eval` 分支；新机器的 clone、环境、资产和验收清单见
+[`docs/NEW_CLUSTER_SETUP.zh-CN.md`](docs/NEW_CLUSTER_SETUP.zh-CN.md)。
+
 当前提供两个经过完整 800 episodes 验证的入口：
 
 - **严格可复现 / legacy 数值路径**：`run_8gpu_deterministic_parity.sh`，用两个独立空 cache 完整运行分别为 **912 秒**和 **894 秒**，均为 **370/800 = 46.25%**，800 个 episode 逐项一致、0 flips。
