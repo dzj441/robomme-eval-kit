@@ -33,16 +33,18 @@ Temporal/State 新参数树，已经明显超出原仓库的 launcher 修改。�
 `accelerated_training/`。
 
 公开 ModelScope 仓库：
-`dzjjzd/robomme-minimal-train-bundle`。新增部分约 70 GiB，包括：
+`dzjjzd/robomme-minimal-train-bundle`。新增部分约 47 GiB，包括：
 
 - 48 GiB `frame_sampling_history_v1`（50 GB 主 memmap 以 12 个 transport
   parts 上传，安装时无损重建）；
-- `big_vision/paligemma_tokenizer.model` 与 `pi05_vision_encoder/siglip_params.pkl`；
-- FastIO baseline 与 Temporal/State 的最终 step-79999 checkpoint；
-- 独立 `SHA256SUMS`。
+- 4 MiB `big_vision/paligemma_tokenizer.model`，保证离线启动；
+- cache 目录内独立的 `SHA256SUMS`。
 
-失败的约 932 GiB current-image SigLIP cache、Anchor/Recent、训练日志和中间
-checkpoint 不在迁移包里。新集群使用 policy 训练分支自带的一键脚本：
+约 638 GiB 的解压数据无需上传，新机器从旧包本地解压。独立 SigLIP encoder、
+两个已训练的 79999 checkpoint、失败的约 932 GiB current-image SigLIP
+cache、Anchor/Recent、训练日志和中间 checkpoint 都不属于从 π0.5 base
+重新训练的输入，因此不在补充包里；评测已有模型时需另行指定 checkpoint。
+新集群使用 policy 训练分支自带的一键脚本：
 
 ```bash
 cd /path/to/RoboMME_policy_train
