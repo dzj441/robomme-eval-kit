@@ -3,8 +3,8 @@
 本分支提供 MME-VLA 无状态推理的多 GPU 编排、episode 级负载均衡、结果合并和性能记录。配套 policy 实现在 [dzj441/robomme_policy_learning 的 `codex/stateless-batched-eval` 分支](https://github.com/dzj441/robomme_policy_learning/tree/codex/stateless-batched-eval)。
 
 Temporal/State 实验请使用两个仓库同名的
-`experiment/temporal-state-memory-eval` 分支；新机器的 clone、环境、资产和验收清单见
-[`docs/NEW_CLUSTER_SETUP.zh-CN.md`](docs/NEW_CLUSTER_SETUP.zh-CN.md)。
+`experiment/temporal-state-memory-eval` 分支；开发机交接与 48 GiB cache 用法见
+[`robomme_benchmark/DEV_MACHINE_SETUP.zh-CN.md`](https://github.com/dzj441/robomme_benchmark/blob/feature/shared-h100-command-bridge/DEV_MACHINE_SETUP.zh-CN.md)。
 
 当前提供两个经过完整 800 episodes 验证的入口：
 
